@@ -57,32 +57,12 @@ export function colorFor(text: string) {
   return kind ? KIND_COLOR[kind] : FALLBACK_COLOR;
 }
 
-/** Minimal shape this module needs from pi's Theme class. */
-export interface ThemeLike {
-  fg(color: string, text: string): string;
-}
-
 /**
- * Wrap a theme so `fg("toolTitle", …)` is re-pointed per tool kind. A proxy
- * (rather than a subclass) keeps the original instance's private colour maps
- * and prototype intact, so `instanceof Theme` and every untouched method
- * behave exactly as before.
+ * The remap the prototype patch in ../index.ts applies. Kept here, separate
+ * from any pi import, so the mapping stays unit-testable on its own.
  */
-export function withToolColors<T extends ThemeLike>(theme: T): T {
-  return new Proxy(theme, {
-    get(target, property, receiver) {
-      if (property !== "fg") return Reflect.get(target, property, receiver);
-
-      return function (color: string, text: string) {
-        const call = (token: string) => target.fg(token, text);
-        if (color !== FALLBACK_COLOR) return call(color);
-        try {
-          return call(colorFor(text));
-        } catch {
-          // A theme missing the mapped token must not break rendering.
-          return call(FALLBACK_COLOR);
-        }
-      };
-    },
-  });
+export function shouldRemap(color: string, text: string) {
+  if (color !== FALLBACK_COLOR) return undefined;
+  const mapped = colorFor(text);
+  return mapped === FALLBACK_COLOR ? undefined : mapped;
 }
