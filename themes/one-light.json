@@ -3,21 +3,23 @@
   "name": "one-light",
   "vars": {
     "bg": "#fafafa",
-    "panel": "#f0f0f1",
-    "surface": "#f2f2f3",
     "border": "#d3d3d4",
     "borderMuted": "#e5e5e6",
-    "text": "#383a42",
-    "muted": "#696c77",
-    "dim": "#8c8d93",
-    "red": "#e45649",
-    "darkRed": "#ca1243",
-    "green": "#50a14f",
-    "yellow": "#c18401",
-    "orange": "#986801",
-    "blue": "#4078f2",
-    "purple": "#a626a4",
-    "cyan": "#0184bc"
+    "text": "#242529",
+    "muted": "#5c5d63",
+    "dim": "#a2a3a7",
+    "red": "#de3e35",
+    "green": "#3f953a",
+    "blue": "#2f5af3",
+    "magenta": "#950095",
+    "cyan": "#0997b3",
+    "brightCyan": "#0bbcd6",
+    "tan": "#d2b67c",
+    "orange": "#ad6e25",
+    "keyword": "#a449ab",
+    "function": "#5b79e3",
+    "string": "#649f57",
+    "type": "#3882b7"
   },
   "colors": {
     "accent": "blue",
@@ -31,7 +33,8 @@
     "dim": "dim",
     "text": "text",
     "thinkingText": "dim",
-    "selectedBg": "#e2e8f8",
+
+    "selectedBg": "#dde5fd",
     "userMessageBg": "#fafafa",
     "userMessageText": "text",
     "customMessageBg": "#fafafa",
@@ -42,7 +45,8 @@
     "toolErrorBg": "#fbeaea",
     "toolTitle": "blue",
     "toolOutput": "muted",
-    "mdHeading": "purple",
+
+    "mdHeading": "magenta",
     "mdLink": "blue",
     "mdLinkUrl": "dim",
     "mdCode": "cyan",
@@ -52,30 +56,34 @@
     "mdQuoteBorder": "border",
     "mdHr": "borderMuted",
     "mdListBullet": "orange",
+
     "toolDiffAdded": "green",
     "toolDiffRemoved": "red",
     "toolDiffContext": "muted",
+
     "syntaxComment": "dim",
-    "syntaxKeyword": "purple",
-    "syntaxFunction": "blue",
-    "syntaxVariable": "red",
-    "syntaxString": "green",
+    "syntaxKeyword": "keyword",
+    "syntaxFunction": "function",
+    "syntaxVariable": "text",
+    "syntaxString": "string",
     "syntaxNumber": "orange",
-    "syntaxType": "yellow",
+    "syntaxType": "type",
     "syntaxOperator": "cyan",
     "syntaxPunctuation": "muted",
+
     "thinkingOff": "dim",
     "thinkingMinimal": "muted",
     "thinkingLow": "blue",
-    "thinkingMedium": "cyan",
-    "thinkingHigh": "purple",
+    "thinkingMedium": "brightCyan",
+    "thinkingHigh": "magenta",
     "thinkingXhigh": "orange",
-    "thinkingMax": "darkRed",
+    "thinkingMax": "red",
+
     "bashMode": "green"
   },
   "export": {
     "pageBg": "bg",
-    "cardBg": "panel",
-    "infoBg": "surface"
+    "cardBg": "#f0f0f1",
+    "infoBg": "#f2f2f3"
   }
 }
