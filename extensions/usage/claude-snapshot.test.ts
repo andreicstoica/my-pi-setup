@@ -78,3 +78,25 @@ test("rejects unusable input rather than reporting zero usage", () => {
     undefined,
   );
 });
+
+test("float percentages round to whole numbers", async () => {
+  // Claude reports used_percentage as a float. 100 - 55.00000000000001 is
+  // 44.99999999999999 in binary floating point, which rendered verbatim in the
+  // footer. Codex reports an integer, so only the cc side ever showed it.
+  const { parseSnapshot } = await import("./src/claude.ts");
+  const now = 1_000_000;
+  const raw = JSON.stringify({
+    written_at: now,
+    five_hour: { used_percentage: 55.00000000000001 },
+    seven_day: { used_percentage: 7.6 },
+  });
+  const usage = parseSnapshot(raw, now);
+  assert.equal(
+    Math.max(0, Math.min(100, Math.round(100 - usage!.fiveHour!.usedPercent))),
+    45,
+  );
+  assert.equal(
+    Math.max(0, Math.min(100, Math.round(100 - usage!.sevenDay!.usedPercent))),
+    92,
+  );
+});

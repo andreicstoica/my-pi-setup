@@ -50,13 +50,22 @@ async function getCodex(force: boolean) {
   return inFlight;
 }
 
+/**
+ * Headroom as a whole number. Claude reports `used_percentage` as a float, so
+ * a naive `100 - used` yields values like 44.99999999999999; codex reports an
+ * integer, which is why only the Claude side ever showed it.
+ */
+function remainingPercent(usedPercent: number) {
+  return Math.max(0, Math.min(100, Math.round(100 - usedPercent)));
+}
+
 function toWindowState(
   window: UsageWindow,
   nowSeconds: number,
 ): UsageWindowState {
   return {
     label: windowLabel(window),
-    remainingPercent: Math.max(0, 100 - window.usedPercent),
+    remainingPercent: remainingPercent(window.usedPercent),
     resetIn: formatResetIn(window.resetsAt, nowSeconds) ?? null,
   };
 }
@@ -87,7 +96,7 @@ function buildState(
     if (!window) continue;
     state.claude.push({
       label,
-      remainingPercent: Math.max(0, 100 - window.usedPercent),
+      remainingPercent: remainingPercent(window.usedPercent),
       resetIn: formatResetIn(window.resetsAt, nowSeconds) ?? null,
     });
   }
@@ -142,7 +151,7 @@ function report(
       if (!window) continue;
       const resetIn = formatResetIn(window.resetsAt, nowSeconds);
       lines.push(
-        `  ${label}: ${Math.max(0, 100 - window.usedPercent)}% left${resetIn ? ` (${resetIn})` : ""}`,
+        `  ${label}: ${remainingPercent(window.usedPercent)}% left${resetIn ? ` (${resetIn})` : ""}`,
       );
     }
   } else {
