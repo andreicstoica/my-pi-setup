@@ -33,6 +33,7 @@ import type {
   TranscriptPart,
 } from "../domain.ts";
 import { SendError, SpawnError } from "../domain.ts";
+import { evaluateToolUse } from "../policy.ts";
 
 const CLAUDE_CONTEXT_WINDOW = 200_000;
 const INTERRUPT_TIMEOUT_MS = 2_000;
@@ -332,6 +333,33 @@ const makeClaudeSession = (
             // its tools without interactive permission checks.
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,
+            // Bypassing *approval* is not the same as unlimited capability.
+            // PreToolUse denials are evaluated independently of permissionMode,
+            // so this holds under bypass — and unlike disallowedTools it can
+            // express "Bash, but not mutating aws". See ../policy.ts.
+            hooks: {
+              PreToolUse: [
+                {
+                  hooks: [
+                    async (hookInput) => {
+                      if (hookInput.hook_event_name !== "PreToolUse") return {};
+                      const denial = evaluateToolUse(
+                        hookInput.tool_name,
+                        hookInput.tool_input,
+                      );
+                      if (!denial) return {};
+                      return {
+                        hookSpecificOutput: {
+                          hookEventName: "PreToolUse" as const,
+                          permissionDecision: "deny" as const,
+                          permissionDecisionReason: denial,
+                        },
+                      };
+                    },
+                  ],
+                },
+              ],
+            },
             // Keep child orchestration inside this extension's global manager
             // and concurrency cap rather than Claude Code's native subagents.
             disallowedTools: ["Agent", "Task"],
