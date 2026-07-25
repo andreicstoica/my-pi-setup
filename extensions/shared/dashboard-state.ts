@@ -1,6 +1,30 @@
 export const MODEL_INFO_CHANNEL = "dashboard:model-info";
 export const GIT_INFO_CHANNEL = "dashboard:git-info";
+export const USAGE_INFO_CHANNEL = "dashboard:usage-info";
 export const REFRESH_CHANNEL = "dashboard:refresh";
+
+/**
+ * Subscription headroom, published by the `usage` extension. Percentages are
+ * *remaining*, not used, because that's the number acted on.
+ */
+export interface UsageInfoState {
+  /** Codex weekly/5h windows. codex-plus reports only the weekly one. */
+  codex: UsageWindowState[];
+  /** Claude Code windows, via the snapshot its statusline writes. */
+  claude: UsageWindowState[];
+  /** Claude's numbers come from a file; flag when it hasn't refreshed lately. */
+  claudeStale: boolean;
+  /** Codex has no credits to fall back on once a window empties. */
+  codexNoCredits: boolean;
+}
+
+export interface UsageWindowState {
+  /** "7d", "5h" */
+  label: string;
+  remainingPercent: number;
+  /** "4d 11h", or null when the reset time is unknown. */
+  resetIn: string | null;
+}
 
 export interface ModelInfoState {
   provider: string;
@@ -52,6 +76,10 @@ export function emptyGitInfoState(): GitInfoState {
   };
 }
 
+export function emptyUsageInfoState(): UsageInfoState {
+  return { codex: [], claude: [], claudeStale: false, codexNoCredits: false };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -84,6 +112,29 @@ function isPullRequestInfo(value: unknown): value is PullRequestInfo {
     typeof value.number === "number" &&
     typeof value.url === "string" &&
     typeof value.isDraft === "boolean"
+  );
+}
+
+function isUsageWindowState(value: unknown): value is UsageWindowState {
+  if (!isRecord(value)) return false;
+
+  return (
+    typeof value.label === "string" &&
+    typeof value.remainingPercent === "number" &&
+    (value.resetIn === null || typeof value.resetIn === "string")
+  );
+}
+
+export function isUsageInfoState(value: unknown): value is UsageInfoState {
+  if (!isRecord(value)) return false;
+
+  return (
+    Array.isArray(value.codex) &&
+    value.codex.every(isUsageWindowState) &&
+    Array.isArray(value.claude) &&
+    value.claude.every(isUsageWindowState) &&
+    typeof value.claudeStale === "boolean" &&
+    typeof value.codexNoCredits === "boolean"
   );
 }
 

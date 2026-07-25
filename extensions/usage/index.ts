@@ -1,11 +1,11 @@
 /**
- * Codex subscription usage in the footer, plus `/usage` for the full picture.
+ * Subscription headroom for both harnesses, published to the dashboard footer.
  *
- * Renders through `ctx.ui.setStatus()` rather than `setFooter()` so it composes
- * with the ui-customization extension, whose footer already appends extension
- * statuses under its own two lines. Setting a footer here would fight it.
+ * Publishes on USAGE_INFO_CHANNEL rather than owning a footer row, so
+ * ui-customization can put usage on the left of a line it already renders
+ * instead of the footer growing by a row per extension.
  *
- * See ./src/codex.ts for why only codex is covered and not Claude.
+ * Sources and why they differ: see ./src/codex.ts and ./src/claude.ts.
  */
 
 import type {
@@ -13,137 +13,170 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import {
+  emptyUsageInfoState,
+  USAGE_INFO_CHANNEL,
+  type UsageInfoState,
+  type UsageWindowState,
+} from "../shared/dashboard-state.ts";
+import { readClaudeUsage, type ClaudeUsage } from "./src/claude.ts";
+import {
   formatResetIn,
   readCodexUsage,
-  severityToken,
   windowLabel,
   type CodexUsage,
   type UsageWindow,
 } from "./src/codex.ts";
 
-const STATUS_KEY = "usage";
-/** Each refresh spawns a process, so don't do it per render. */
-const CACHE_TTL_MS = 5 * 60 * 1000;
+/** Each codex refresh spawns a process, so don't do it per render. */
+const CODEX_CACHE_TTL_MS = 5 * 60 * 1000;
 
-let cached: { usage: CodexUsage | undefined; at: number } | undefined;
+let cachedCodex: { usage: CodexUsage | undefined; at: number } | undefined;
 let inFlight: Promise<CodexUsage | undefined> | undefined;
 
-async function getUsage(force: boolean) {
-  if (!force && cached && Date.now() - cached.at < CACHE_TTL_MS)
-    return cached.usage;
+async function getCodex(force: boolean) {
+  if (
+    !force &&
+    cachedCodex &&
+    Date.now() - cachedCodex.at < CODEX_CACHE_TTL_MS
+  ) {
+    return cachedCodex.usage;
+  }
   // Collapse concurrent callers (session_start racing /usage) onto one probe.
   inFlight ??= readCodexUsage().then((usage) => {
-    cached = { usage, at: Date.now() };
+    cachedCodex = { usage, at: Date.now() };
     inFlight = undefined;
     return usage;
   });
   return inFlight;
 }
 
-/**
- * "7d: 17% (2d 3h)" — the bare percentage is *remaining*, not used. The word
- * "left" is dropped for width; the reset countdown stays because it changes
- * what you do about a low number.
- */
-function describeWindow(window: UsageWindow, nowSeconds: number) {
-  const remaining = Math.max(0, 100 - window.usedPercent);
-  const resetIn = formatResetIn(window.resetsAt, nowSeconds);
+function toWindowState(
+  window: UsageWindow,
+  nowSeconds: number,
+): UsageWindowState {
   return {
-    remaining,
-    text: `${windowLabel(window)}: ${remaining}%${resetIn ? ` (${resetIn})` : ""}`,
+    label: windowLabel(window),
+    remainingPercent: Math.max(0, 100 - window.usedPercent),
+    resetIn: formatResetIn(window.resetsAt, nowSeconds) ?? null,
   };
 }
 
-function renderStatus(ctx: ExtensionContext, usage: CodexUsage | undefined) {
-  if (!usage) {
-    ctx.ui.setStatus(STATUS_KEY, undefined);
-    return;
+function buildState(
+  codex: CodexUsage | undefined,
+  claude: ClaudeUsage | undefined,
+  nowSeconds: number,
+): UsageInfoState {
+  const state = emptyUsageInfoState();
+
+  for (const window of [codex?.primary, codex?.secondary]) {
+    if (window) state.codex.push(toWindowState(window, nowSeconds));
   }
+  // Credits are the backstop once a window empties — only worth surfacing when
+  // headroom is actually short.
+  const lowest = Math.min(100, ...state.codex.map((w) => w.remainingPercent));
+  state.codexNoCredits =
+    !!codex?.credits &&
+    !codex.credits.unlimited &&
+    !codex.credits.hasCredits &&
+    lowest <= 25;
 
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const parts: string[] = [];
-  let lowest = 100;
-
-  for (const window of [usage.primary, usage.secondary]) {
+  for (const [label, window] of [
+    ["5h", claude?.fiveHour],
+    ["7d", claude?.sevenDay],
+  ] as const) {
     if (!window) continue;
-    const { remaining, text } = describeWindow(window, nowSeconds);
-    lowest = Math.min(lowest, remaining);
-    parts.push(ctx.ui.theme.fg(severityToken(remaining), text));
+    state.claude.push({
+      label,
+      remainingPercent: Math.max(0, 100 - window.usedPercent),
+      resetIn: formatResetIn(window.resetsAt, nowSeconds) ?? null,
+    });
   }
-  if (parts.length === 0) {
-    ctx.ui.setStatus(STATUS_KEY, undefined);
-    return;
-  }
+  state.claudeStale = claude?.stale ?? false;
 
-  // Credits are the backstop once a window empties — irrelevant noise while
-  // there's headroom, so only mention them when there isn't.
-  const noCredits =
-    usage.credits && !usage.credits.unlimited && !usage.credits.hasCredits;
-  if (noCredits && lowest <= 25) {
-    parts.push(ctx.ui.theme.fg("error", "0 credits"));
-  }
-
-  ctx.ui.setStatus(
-    STATUS_KEY,
-    `${ctx.ui.theme.fg("dim", "codex")} ${parts.join(ctx.ui.theme.fg("dim", " · "))}`,
-  );
+  return state;
 }
 
-function buildReport(usage: CodexUsage | undefined) {
-  if (!usage) {
-    return "Codex usage unavailable — is `codex` installed and logged in? (`codex login`)";
-  }
-
+function report(
+  codex: CodexUsage | undefined,
+  claude: ClaudeUsage | undefined,
+) {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const lines: string[] = [];
-  const plan = usage.planType ? `plan: ${usage.planType}` : "plan: unknown";
-  lines.push(
-    `Codex — ${plan}${usage.limitName ? ` (${usage.limitName})` : ""}`,
-  );
 
-  const windows = [
-    ["primary", usage.primary],
-    ["secondary", usage.secondary],
-  ] as const;
-  let any = false;
-  for (const [name, window] of windows) {
-    if (!window) continue;
-    any = true;
-    const { text } = describeWindow(window, nowSeconds);
-    lines.push(`  ${text}  —  ${window.usedPercent}% used [${name}]`);
+  if (codex) {
+    lines.push(`Codex — plan: ${codex.planType ?? "unknown"}`);
+    const windows = [codex.primary, codex.secondary].filter(
+      Boolean,
+    ) as UsageWindow[];
+    if (windows.length === 0) lines.push("  no rate-limit windows reported");
+    for (const window of windows) {
+      const w = toWindowState(window, nowSeconds);
+      lines.push(
+        `  ${w.label}: ${w.remainingPercent}% left${w.resetIn ? ` (${w.resetIn})` : ""}  —  ${window.usedPercent}% used`,
+      );
+    }
+    if (codex.credits) {
+      lines.push(
+        codex.credits.unlimited
+          ? "  credits: unlimited"
+          : `  credits: ${codex.credits.balance ?? "0"}${codex.credits.hasCredits ? "" : " (none to fall back on)"}`,
+      );
+    }
+    if (codex.spendControlReached) lines.push("  ⚠ spend control reached");
+    if (codex.rateLimitReachedType)
+      lines.push(`  ⚠ limit reached: ${codex.rateLimitReachedType}`);
+  } else {
+    lines.push("Codex — unavailable (is `codex` installed and logged in?)");
   }
-  if (!any) lines.push("  no rate-limit windows reported");
-
-  if (usage.credits) {
-    lines.push(
-      usage.credits.unlimited
-        ? "  credits: unlimited"
-        : `  credits: ${usage.credits.balance ?? "0"}${usage.credits.hasCredits ? "" : " (none — nothing to fall back on)"}`,
-    );
-  }
-  if (usage.spendControlReached) lines.push("  ⚠ spend control reached");
-  if (usage.rateLimitReachedType)
-    lines.push(`  ⚠ limit reached: ${usage.rateLimitReachedType}`);
 
   lines.push("");
-  lines.push(
-    "Claude 5h/7d percentages aren't readable from pi — your Claude Code statusline shows them.",
-  );
+  if (claude) {
+    const age = Math.round(claude.ageSeconds / 60);
+    lines.push(
+      `Claude Code — snapshot ${age}m old${claude.stale ? " (STALE)" : ""}`,
+    );
+    for (const [label, window] of [
+      ["5h", claude.fiveHour],
+      ["7d", claude.sevenDay],
+    ] as const) {
+      if (!window) continue;
+      const resetIn = formatResetIn(window.resetsAt, nowSeconds);
+      lines.push(
+        `  ${label}: ${Math.max(0, 100 - window.usedPercent)}% left${resetIn ? ` (${resetIn})` : ""}`,
+      );
+    }
+  } else {
+    lines.push("Claude Code — no snapshot yet.");
+    lines.push(
+      "  Its statusline writes ~/.claude/usage-snapshot.json; run a Claude Code session once.",
+    );
+  }
+
   return lines.join("\n");
 }
 
+async function publish(pi: ExtensionAPI, force: boolean) {
+  const [codex, claude] = [await getCodex(force), readClaudeUsage()];
+  pi.events.emit(
+    USAGE_INFO_CHANNEL,
+    buildState(codex, claude, Math.floor(Date.now() / 1000)),
+  );
+  return { codex, claude };
+}
+
 export default function (pi: ExtensionAPI) {
-  pi.on("session_start", async (_event, ctx) => {
-    if (ctx.mode !== "tui") return;
-    renderStatus(ctx, await getUsage(false));
+  pi.on("session_start", async () => {
+    await publish(pi, false);
   });
 
   pi.registerCommand("usage", {
-    description: "Show codex subscription usage (refreshes)",
-    handler: async (_args, ctx) => {
-      const usage = await getUsage(true);
-      if (ctx.mode === "tui") renderStatus(ctx, usage);
-      ctx.ui.notify(buildReport(usage), usage ? "info" : "warning");
+    description: "Show Codex and Claude Code subscription usage (refreshes)",
+    handler: async (_args, ctx: ExtensionContext) => {
+      const { codex, claude } = await publish(pi, true);
+      ctx.ui.notify(
+        report(codex, claude),
+        codex || claude ? "info" : "warning",
+      );
     },
   });
 }
