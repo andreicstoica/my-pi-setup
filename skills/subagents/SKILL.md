@@ -13,16 +13,21 @@ Each subagent is headless, has its own context window, cannot see the parent con
 **Prompt nicknames:** “pi”, “pi agent”, “pi subagent”
 **Best default:** Use when the user does not request another harness. It inherits the parent model and thinking level when `model` or `reasoning_effort` is omitted.
 
-Do not use models from the Anthropic provider even if one appears in the model list.
+Spawn `pi` subagents only on the `openai-codex` provider.
 
-Pi can use any model shown by `pi --list-models`. Prefer `provider/model-id`; a bare model id only works when unambiguous. Common picks in this environment:
+- The `anthropic` provider has no credential here — the spawn fails. Anthropic models belong on the **`claude` harness**, which is covered by the Max subscription.
+- `openrouter` is authenticated but reserved for manual use. Do not spawn on it.
+- There is no `opencode` credential. That provider is OpenCode Zen (hosted, needs `OPENCODE_API_KEY`), not a local `opencode serve`.
+- Other CLIs (cursor-agent, opencode) are invoked by the user directly, never by you.
 
-| Model                            | Recommended effort |
-| -------------------------------- | ------------------ |
-| inherited parent model (default) | inherited          |
-| `openai-codex/gpt-5.6-sol`       | `high`             |
-| `openai-codex/gpt-5.6-terra`     | `high`             |
-| `opencode/claude-fable-5`        | `medium`           |
+Prefer `provider/model-id`; a bare model id only works when unambiguous.
+
+| Model                        | Use for                                    | Effort            |
+| ---------------------------- | ------------------------------------------ | ----------------- |
+| inherited parent model       | default when no model is given              | inherited         |
+| `openai-codex/gpt-5.6-sol`   | coding                                     | `high`            |
+| `openai-codex/gpt-5.6-terra` | coding                                     | `medium`          |
+| `openai-codex/gpt-5.6-luna`  | cheap/mechanical passes; deep one-offs      | `medium`, `xhigh` |
 
 **Thinking budgets:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. These map directly to pi thinking levels.
 
