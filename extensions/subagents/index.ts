@@ -76,6 +76,8 @@ import {
 } from "./src/runtime.ts";
 import { openSubagentPicker, openSubagentTakeover } from "./src/ui/takeover.ts";
 
+/** Collapsed preview height for a finished subagent's result message. */
+const RESULT_PREVIEW_LINES = 3;
 const SUBAGENT_OUTPUT_MAX_BYTES = 24 * 1024;
 const WAIT_OUTPUT_MAX_BYTES = 48 * 1024;
 const WAIT_PER_AGENT_MAX_BYTES = 16 * 1024;
@@ -610,12 +612,16 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
-      const previewLines = body.split("\n").slice(0, 8);
+      // Kept short deliberately: a fan-out of 5 subagents at 8 preview lines
+      // each buried the orchestrator's own answer under 40 lines of transcript.
+      // The full text is one ctrl+o away, and it is already in the model's
+      // context regardless of what is rendered here.
+      const lines = body.split("\n");
       let text = header;
-      for (const line of previewLines)
+      for (const line of lines.slice(0, RESULT_PREVIEW_LINES))
         text += `\n${theme.fg("toolOutput", line)}`;
-      if (body.split("\n").length > 8)
-        text += `\n${theme.fg("dim", "... (ctrl+o to expand)")}`;
+      if (lines.length > RESULT_PREVIEW_LINES)
+        text += `\n${theme.fg("dim", `... +${lines.length - RESULT_PREVIEW_LINES} lines (ctrl+o to expand)`)}`;
       return new Text(text, 0, 0);
     },
   );

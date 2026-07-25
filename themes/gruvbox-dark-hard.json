@@ -33,7 +33,7 @@
     "muted": "fg4",
     "dim": "gray",
     "text": "fg1",
-    "thinkingText": "fg4",
+    "thinkingText": "gray",
     "selectedBg": "#665c54",
     "userMessageBg": "#1d2021",
     "userMessageText": "fg1",

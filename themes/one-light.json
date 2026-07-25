@@ -30,7 +30,7 @@
     "muted": "muted",
     "dim": "dim",
     "text": "text",
-    "thinkingText": "muted",
+    "thinkingText": "dim",
     "selectedBg": "#e2e8f8",
     "userMessageBg": "#fafafa",
     "userMessageText": "text",
