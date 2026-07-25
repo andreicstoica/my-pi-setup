@@ -16,11 +16,12 @@
  * cursor, in whatever style it is configured for — a bar, in Ghostty with
  * `cursor-style = bar`.
  *
- * Self-guarding: the fake cursor is only removed on lines carrying
- * CURSOR_MARKER, which pi emits immediately before it and *only* when the
- * hardware cursor is enabled. If `showHardwareCursor` is ever turned off, the
- * marker disappears, nothing is stripped, and the drawn block returns — so this
- * can never leave a field with no visible cursor at all.
+ * Guarded on `tui.getShowHardwareCursor()`, not on the marker. The marker is
+ * emitted whenever the component is focused (editor.js:419
+ * `const emitCursorMarker = this.focused`) regardless of the setting, so using
+ * it as the guard would strip the drawn cursor even with the hardware cursor
+ * disabled — leaving no visible cursor at all. The marker is still used to
+ * locate the cursor's line; it is just not evidence that the real cursor is on.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -32,6 +33,7 @@ const FAKE_CURSOR = /\x1b\[7m(.*?)\x1b\[0m/;
 type RenderFn = (width: number) => string[];
 type PatchedRender = RenderFn & { __hardwareCursorOnly?: boolean };
 type Renderable = { prototype?: { render?: PatchedRender } };
+type HasTui = { tui?: { getShowHardwareCursor?: () => boolean } };
 
 function stripFakeCursor(lines: string[]) {
   return lines.map((line) =>
@@ -51,8 +53,10 @@ function patchRender(component: Renderable, label: string) {
   }
   if (original.__hardwareCursorOnly) return undefined;
 
-  const patched: PatchedRender = function (this: unknown, width: number) {
-    return stripFakeCursor(original.call(this, width));
+  const patched: PatchedRender = function (this: HasTui, width: number) {
+    const lines = original.call(this, width);
+    // Only remove pi's drawn cursor when the terminal is actually drawing one.
+    return this.tui?.getShowHardwareCursor?.() ? stripFakeCursor(lines) : lines;
   };
   patched.__hardwareCursorOnly = true;
   prototype!.render = patched;

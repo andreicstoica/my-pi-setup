@@ -61,3 +61,17 @@ test("both cursor-drawing components are exported and patchable", async () => {
     );
   }
 });
+
+test("the guard is the setting, not the marker", async () => {
+  // editor.js:419 emits CURSOR_MARKER whenever the component is FOCUSED,
+  // regardless of showHardwareCursor. Guarding on the marker would strip pi's
+  // drawn cursor with the setting off, leaving no visible cursor at all.
+  const tui = await import("@earendil-works/pi-tui");
+  assert.equal(
+    typeof (
+      tui.TUI?.prototype as { getShowHardwareCursor?: unknown } | undefined
+    )?.getShowHardwareCursor,
+    "function",
+    "TUI must expose getShowHardwareCursor for the guard",
+  );
+});
