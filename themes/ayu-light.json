@@ -49,7 +49,7 @@
     "mdLinkUrl": "dim",
     "mdCode": "cyan",
     "mdCodeBlock": "text",
-    "mdCodeBlockBorder": "border",
+    "mdCodeBlockBorder": "#f8f9fa",
     "mdQuote": "muted",
     "mdQuoteBorder": "border",
     "mdHr": "borderMuted",

@@ -33,7 +33,6 @@
     "dim": "dim",
     "text": "text",
     "thinkingText": "dim",
-
     "selectedBg": "#dde5fd",
     "userMessageBg": "#fafafa",
     "userMessageText": "text",
@@ -45,22 +44,19 @@
     "toolErrorBg": "#fbeaea",
     "toolTitle": "blue",
     "toolOutput": "muted",
-
     "mdHeading": "magenta",
     "mdLink": "blue",
     "mdLinkUrl": "dim",
     "mdCode": "cyan",
     "mdCodeBlock": "text",
-    "mdCodeBlockBorder": "border",
+    "mdCodeBlockBorder": "#fafafa",
     "mdQuote": "muted",
     "mdQuoteBorder": "border",
     "mdHr": "borderMuted",
     "mdListBullet": "orange",
-
     "toolDiffAdded": "green",
     "toolDiffRemoved": "red",
     "toolDiffContext": "muted",
-
     "syntaxComment": "dim",
     "syntaxKeyword": "keyword",
     "syntaxFunction": "function",
@@ -70,7 +66,6 @@
     "syntaxType": "type",
     "syntaxOperator": "cyan",
     "syntaxPunctuation": "muted",
-
     "thinkingOff": "dim",
     "thinkingMinimal": "muted",
     "thinkingLow": "blue",
@@ -78,7 +73,6 @@
     "thinkingHigh": "magenta",
     "thinkingXhigh": "orange",
     "thinkingMax": "red",
-
     "bashMode": "green"
   },
   "export": {
