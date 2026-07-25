@@ -14,6 +14,10 @@ You orchestrate. Spawn subagents for work that is self-contained — see the `su
 
 **MCP tools do not exist in pi.** Linear, the Liftoff prod MCP, Figma, and Sentry are only reachable from Claude Code. When a task needs one, spawn a `claude` subagent on `sonnet` with a prompt naming exactly the data you need and telling it to report findings back as text. Don't try to reach those services any other way.
 
+## Tools
+
+- Reading git history or changes: use `git_diff`, `git_show`, `git_log` — not `bash git …`. They render real diffs with `file:line` headers instead of flat text. `bash` is still right for git commands that *act* (commit, rebase, `gt`).
+
 ## Liftoff (`~/liftoff/*`)
 
 - `kit` is my CLI for the Liftoff worktrees — dev servers, ports, worktrees. Use it instead of raw `yarn dev`/`uvicorn`: `kit play` (start), `kit restart` (bounce a hung/edited server — don't spawn a fresh `yarn dev`), `kit links` (this worktree's ports/URLs), `kit open`/`kit focus` (open it). Each worktree has its own slot port band; the server is usually already running on it.
