@@ -34,19 +34,17 @@
     "dim": "gray",
     "text": "fg1",
     "thinkingText": "fg4",
-
     "selectedBg": "#665c54",
-    "userMessageBg": "bg0",
+    "userMessageBg": "#1d2021",
     "userMessageText": "fg1",
-    "customMessageBg": "bg0",
+    "customMessageBg": "#1d2021",
     "customMessageText": "fg1",
     "customMessageLabel": "aqua",
-    "toolPendingBg": "bg0",
-    "toolSuccessBg": "bg0",
+    "toolPendingBg": "#1d2021",
+    "toolSuccessBg": "#1d2021",
     "toolErrorBg": "#3c2222",
     "toolTitle": "aqua",
-    "toolOutput": "fg4",
-
+    "toolOutput": "gray",
     "mdHeading": "yellow",
     "mdLink": "blue",
     "mdLinkUrl": "gray",
@@ -57,11 +55,9 @@
     "mdQuoteBorder": "bg3",
     "mdHr": "bg2",
     "mdListBullet": "orange",
-
     "toolDiffAdded": "green",
     "toolDiffRemoved": "red",
     "toolDiffContext": "fg4",
-
     "syntaxComment": "gray",
     "syntaxKeyword": "red",
     "syntaxFunction": "green",
@@ -71,7 +67,6 @@
     "syntaxType": "yellow",
     "syntaxOperator": "orange",
     "syntaxPunctuation": "fg4",
-
     "thinkingOff": "gray",
     "thinkingMinimal": "fg4",
     "thinkingLow": "blue",
@@ -79,7 +74,6 @@
     "thinkingHigh": "yellow",
     "thinkingXhigh": "orange",
     "thinkingMax": "red",
-
     "bashMode": "green"
   },
   "export": {
