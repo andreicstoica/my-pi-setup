@@ -21,7 +21,7 @@
 
 import { Theme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { shouldRemap } from "./src/colors.ts";
+import { decorateTitle, FALLBACK_COLOR, shouldRemap } from "./src/colors.ts";
 
 type FgMethod = (color: string, text: string) => string;
 type PatchedFg = FgMethod & { __toolColors?: boolean };
@@ -46,13 +46,19 @@ function patchThemePrototype() {
     color: string,
     text: string,
   ) {
-    const mapped = shouldRemap(color, text);
-    if (mapped) {
-      try {
-        return original.call(this, mapped, text);
-      } catch {
-        // A theme missing the mapped token must not break rendering.
+    if (color === FALLBACK_COLOR) {
+      // Every tool title gets the glyph, so the transcript scans by shape;
+      // recognised kinds additionally get their own hue.
+      const decorated = decorateTitle(text);
+      const mapped = shouldRemap(color, text);
+      if (mapped) {
+        try {
+          return original.call(this, mapped, decorated);
+        } catch {
+          // A theme missing the mapped token must not break rendering.
+        }
       }
+      return original.call(this, color, decorated);
     }
     return original.call(this, color, text);
   };

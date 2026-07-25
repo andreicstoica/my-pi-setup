@@ -42,9 +42,18 @@ const KIND_PATTERNS: ReadonlyArray<readonly [TitleKind, RegExp]> = [
 // Control sequences are stripped before matching so bold/colour wrappers on the
 // title do not defeat the anchors above.
 const ANSI = /\x1b\[[0-9;]*m/g;
+/** Leading glyph, stripped before classifying so decoration is order-safe. */
+const GLYPH_PREFIX = /^●\s*/;
 
 export function classify(text: string): TitleKind | undefined {
-  const plain = text.replace(ANSI, "").trim().toLowerCase();
+  // The glyph is stripped as well as ANSI: a title that has already been
+  // decorated (a re-render of a cached string) must still classify, or it would
+  // silently fall back to the default colour.
+  const plain = text
+    .replace(ANSI, "")
+    .replace(GLYPH_PREFIX, "")
+    .trim()
+    .toLowerCase();
   for (const [kind, pattern] of KIND_PATTERNS) {
     if (pattern.test(plain)) return kind;
   }
@@ -55,6 +64,23 @@ export function classify(text: string): TitleKind | undefined {
 export function colorFor(text: string) {
   const kind = classify(text);
   return kind ? KIND_COLOR[kind] : FALLBACK_COLOR;
+}
+
+/**
+ * Leading glyph on every tool title, so a streaming transcript can be scanned
+ * by shape as well as read — the trick that makes Claude Code's action log
+ * followable. Colour already encodes *what kind* of action it is, so one glyph
+ * is enough; a different symbol per kind would be noise on top of that.
+ */
+export const TITLE_GLYPH = "● ";
+
+/**
+ * Prefix a title, unless it already carries the glyph. `fg("toolTitle", …)` is
+ * called once per title with the whole string, so this cannot double up mid
+ * render — but a re-render of the same cached string could, hence the guard.
+ */
+export function decorateTitle(text: string) {
+  return text.startsWith(TITLE_GLYPH) ? text : `${TITLE_GLYPH}${text}`;
 }
 
 /**

@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { Theme } from "@earendil-works/pi-coding-agent";
-import { classify, colorFor, shouldRemap } from "./src/colors.ts";
+import {
+  classify,
+  colorFor,
+  decorateTitle,
+  shouldRemap,
+} from "./src/colors.ts";
 
 const BOLD = "\x1b[1m";
 const RESET = "\x1b[0m";
@@ -178,4 +183,28 @@ test("the patch applies to instances created after it, not just existing ones", 
   } finally {
     undo();
   }
+});
+
+// --- Scannable glyph ------------------------------------------------------
+
+test("every tool title gets one leading glyph", () => {
+  assert.equal(decorateTitle("read a.ts"), "● read a.ts");
+  assert.equal(decorateTitle("$ npm test"), "● $ npm test");
+  // Unrecognised kinds still get the glyph — the transcript should scan
+  // uniformly even where colour carries no extra meaning.
+  assert.equal(decorateTitle("todo_write"), "● todo_write");
+});
+
+test("decorating is idempotent", () => {
+  // A cached title re-rendered must not accumulate glyphs.
+  assert.equal(decorateTitle(decorateTitle("read a.ts")), "● read a.ts");
+});
+
+test("glyph survives a bolded title", () => {
+  // pi wraps titles in theme.bold() before fg(), so the glyph lands outside
+  // the bold sequence, which is fine — it just must not be swallowed.
+  const bolded = `${BOLD}edit${RESET} a.ts`;
+  assert.equal(decorateTitle(bolded), `● ${BOLD}edit${RESET} a.ts`);
+  // Classification still works on the decorated string.
+  assert.equal(classify(decorateTitle(bolded)), "mutate");
 });
