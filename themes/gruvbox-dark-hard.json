@@ -44,7 +44,7 @@
     "toolSuccessBg": "#1d2021",
     "toolErrorBg": "#3c2222",
     "toolTitle": "aqua",
-    "toolOutput": "gray",
+    "toolOutput": "fg4",
     "mdHeading": "yellow",
     "mdLink": "blue",
     "mdLinkUrl": "gray",

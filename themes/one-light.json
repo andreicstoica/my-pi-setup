@@ -41,7 +41,7 @@
     "toolSuccessBg": "#fafafa",
     "toolErrorBg": "#fbeaea",
     "toolTitle": "blue",
-    "toolOutput": "dim",
+    "toolOutput": "muted",
     "mdHeading": "purple",
     "mdLink": "blue",
     "mdLinkUrl": "dim",
