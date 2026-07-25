@@ -40,13 +40,17 @@ async function getUsage(force: boolean) {
   return inFlight;
 }
 
-/** "7d: 17% left (2d 3h)" — remaining, because that's the number you act on. */
+/**
+ * "7d: 17% (2d 3h)" — the bare percentage is *remaining*, not used. The word
+ * "left" is dropped for width; the reset countdown stays because it changes
+ * what you do about a low number.
+ */
 function describeWindow(window: UsageWindow, nowSeconds: number) {
   const remaining = Math.max(0, 100 - window.usedPercent);
   const resetIn = formatResetIn(window.resetsAt, nowSeconds);
   return {
     remaining,
-    text: `${windowLabel(window)}: ${remaining}% left${resetIn ? ` (${resetIn})` : ""}`,
+    text: `${windowLabel(window)}: ${remaining}%${resetIn ? ` (${resetIn})` : ""}`,
   };
 }
 
@@ -58,10 +62,12 @@ function renderStatus(ctx: ExtensionContext, usage: CodexUsage | undefined) {
 
   const nowSeconds = Math.floor(Date.now() / 1000);
   const parts: string[] = [];
+  let lowest = 100;
 
   for (const window of [usage.primary, usage.secondary]) {
     if (!window) continue;
     const { remaining, text } = describeWindow(window, nowSeconds);
+    lowest = Math.min(lowest, remaining);
     parts.push(ctx.ui.theme.fg(severityToken(remaining), text));
   }
   if (parts.length === 0) {
@@ -69,10 +75,12 @@ function renderStatus(ctx: ExtensionContext, usage: CodexUsage | undefined) {
     return;
   }
 
-  // Credits are the backstop when a window empties, so a zero balance is worth
-  // showing next to a low window rather than buried in `/usage`.
-  if (usage.credits && !usage.credits.unlimited && !usage.credits.hasCredits) {
-    parts.push(ctx.ui.theme.fg("dim", "no credits"));
+  // Credits are the backstop once a window empties — irrelevant noise while
+  // there's headroom, so only mention them when there isn't.
+  const noCredits =
+    usage.credits && !usage.credits.unlimited && !usage.credits.hasCredits;
+  if (noCredits && lowest <= 25) {
+    parts.push(ctx.ui.theme.fg("error", "0 credits"));
   }
 
   ctx.ui.setStatus(
