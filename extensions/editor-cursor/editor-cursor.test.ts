@@ -45,3 +45,19 @@ test("strips only one cursor even if reverse video appears twice", () => {
 test("the marker pi emits is what we key on", () => {
   assert.equal(CURSOR_MARKER, "\x1b_pi:c\x07");
 });
+
+test("both cursor-drawing components are exported and patchable", async () => {
+  // Editor is the main prompt; Input is the single-line field behind submenus,
+  // dialogs and filter prompts. Patching only Editor left submenus showing a
+  // block, which is the bug this covers.
+  const tui = await import("@earendil-works/pi-tui");
+  for (const name of ["Editor", "Input"] as const) {
+    const component = tui[name] as { prototype?: { render?: unknown } };
+    assert.equal(typeof component, "function", `${name} should be exported`);
+    assert.equal(
+      typeof component.prototype?.render,
+      "function",
+      `${name}.prototype.render should exist`,
+    );
+  }
+});
