@@ -161,7 +161,9 @@ export default function (pi: ExtensionAPI) {
       "Show a git diff, rendered with file:line headers and diff colouring",
     parameters: diffParameters(),
     async execute(_id, params, signal, _onUpdate, ctx) {
-      const args = ["diff", "--no-color", "--no-ext-diff"];
+      // Two context lines, not git's default three. Enough to place a hunk,
+      // little enough that the changed lines dominate the block.
+      const args = ["diff", "--no-color", "--no-ext-diff", "-U2"];
       if (params.staged) args.push("--staged");
       if (params.revision_range) args.push(params.revision_range);
       if (params.paths?.length) args.push("--", ...params.paths);
