@@ -54,8 +54,8 @@
     "mdCodeBlock": "text",
     "mdCodeBlockBorder": "border",
     "mdQuote": "muted",
-    "mdQuoteBorder": "border",
-    "mdHr": "borderMuted",
+    "mdQuoteBorder": "accent",
+    "mdHr": "border",
     "mdListBullet": "orange",
 
     "toolDiffAdded": "green",

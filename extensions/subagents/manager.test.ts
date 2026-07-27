@@ -170,6 +170,38 @@ test("spawn origin propagates to ids, snapshots, and settlement", async () => {
   });
 });
 
+test("ids are derived from the spawn title, deduped, and fall back to a counter", async () => {
+  await withManager(async (manager, runtime) => {
+    const spawn = (title: string) =>
+      runTool(
+        runtime,
+        manager.spawn("claude", {
+          ...task("Long running task"),
+          title,
+        }),
+      );
+
+    const first = await spawn("Investigate Auth Regression!");
+    assert.equal(first.id, "sa-investigate-auth-regression");
+
+    // Same title while the first is still tracked: suffixed, never reused.
+    const second = await spawn("Investigate auth regression");
+    assert.equal(second.id, "sa-investigate-auth-regression-2");
+
+    // Titles longer than four words are clipped, not truncated mid-word.
+    const long = await spawn("audit the css tokens across every package");
+    assert.equal(long.id, "sa-audit-the-css-tokens");
+
+    const unnamed = await spawn("🙂");
+    assert.match(unnamed.id, /^sa-\d+$/);
+
+    await runTool(
+      runtime,
+      manager.cancel([first.id, second.id, long.id, unnamed.id]),
+    );
+  });
+});
+
 test("the global concurrency cap includes by-the-way sessions", async () => {
   await withManager(async (manager, runtime) => {
     const tasks: SpawnTask[] = [

@@ -35,6 +35,7 @@ import {
   formatSize,
   getAgentDir,
   getMarkdownTheme,
+  keyHint,
   ProjectTrustStore,
   truncateHead,
 } from "@earendil-works/pi-coding-agent";
@@ -100,6 +101,40 @@ function describeSubagent(snap: SubagentSnapshot) {
     snap.cwd,
   ].filter(Boolean);
   return `${snap.id} [${snap.status}] "${snap.title}" (${details.join(", ")})`;
+}
+
+interface ThemeLike {
+  fg(color: string, text: string): string;
+  bold(text: string): string;
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  running: "warning",
+  done: "success",
+  error: "error",
+};
+
+function resultText(result: {
+  content: ReadonlyArray<{ type: string; text?: string }>;
+}) {
+  return result.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text ?? "")
+    .join("\n")
+    .trim();
+}
+
+/** `■ sa-audit-css "Audit CSS" running` — the shape every subagent row uses. */
+function renderRow(
+  theme: ThemeLike,
+  entry: { id?: string; title?: string; status?: string; harness?: string },
+) {
+  const color = STATUS_COLOR[entry.status ?? ""] ?? "dim";
+  let text = `${theme.fg(color, "■")} ${theme.fg("accent", entry.id ?? "?")}`;
+  if (entry.title) text += ` ${theme.fg("muted", entry.title)}`;
+  const tail = [entry.harness, entry.status].filter(Boolean).join(" · ");
+  if (tail) text += ` ${theme.fg("dim", tail)}`;
+  return text;
 }
 
 function truncatedOutput(
@@ -355,6 +390,38 @@ export default function (pi: ExtensionAPI) {
         },
       };
     },
+
+    renderCall(args, theme) {
+      let text = theme.fg("toolTitle", theme.bold("spawn "));
+      text += theme.fg("accent", args.name?.trim() || "subagent");
+      const flags = [
+        args.harness,
+        args.model,
+        args.reasoning_effort ? `effort=${args.reasoning_effort}` : undefined,
+        args.working_dir && args.working_dir !== "."
+          ? args.working_dir
+          : undefined,
+      ].filter((flag): flag is string => typeof flag === "string");
+      if (flags.length > 0) text += " " + theme.fg("dim", flags.join(" · "));
+      return new Text(text, 0, 0);
+    },
+
+    renderResult(result, { expanded, isPartial }, theme) {
+      if (isPartial) return new Text(theme.fg("warning", "Spawning…"), 0, 0);
+      const details = (result.details ?? {}) as {
+        id?: string;
+        title?: string;
+        harness?: string;
+        model?: string;
+        cwd?: string;
+      };
+      let text = renderRow(theme, { ...details, status: "running" });
+      if (expanded) {
+        const meta = [details.model, details.cwd].filter(Boolean).join(" · ");
+        if (meta) text += `\n    ${theme.fg("dim", meta)}`;
+      }
+      return new Text(text, 0, 0);
+    },
   });
 
   pi.registerTool({
@@ -449,6 +516,45 @@ export default function (pi: ExtensionAPI) {
         },
       };
     },
+
+    renderCall(args, theme) {
+      const ids = args.ids ?? [];
+      let text = theme.fg("toolTitle", theme.bold("wait "));
+      text += theme.fg("accent", ids.join(", ") || "…");
+      return new Text(text, 0, 0);
+    },
+
+    renderResult(result, { expanded, isPartial }, theme) {
+      const details = (result.details ?? {}) as {
+        pending?: string[];
+        results?: Array<{ id?: string; title?: string; status?: string }>;
+      };
+      if (isPartial) {
+        const pending = details.pending ?? [];
+        return new Text(
+          theme.fg(
+            "warning",
+            pending.length > 0
+              ? `Waiting on ${pending.join(", ")}…`
+              : "Waiting…",
+          ),
+          0,
+          0,
+        );
+      }
+      const results = details.results ?? [];
+      if (results.length === 0) return new Text(theme.fg("dim", "done"), 0, 0);
+      let text = results.map((entry) => renderRow(theme, entry)).join("\n");
+      // Each result is also delivered as its own subagent-result message, so
+      // the collapsed row list stays a summary; the transcript is one expand away.
+      if (expanded) {
+        const body = resultText(result);
+        if (body) text += `\n\n${theme.fg("toolOutput", body)}`;
+      } else {
+        text += `\n${theme.fg("dim", `(${keyHint("app.tools.expand", "for output")})`)}`;
+      }
+      return new Text(text, 0, 0);
+    },
   });
 
   pi.registerTool({
@@ -502,6 +608,29 @@ export default function (pi: ExtensionAPI) {
         },
       };
     },
+
+    renderCall(args, theme) {
+      return new Text(
+        theme.fg("toolTitle", theme.bold("cancel ")) +
+          theme.fg("accent", (args.ids ?? []).join(", ") || "…"),
+        0,
+        0,
+      );
+    },
+
+    renderResult(result, _options, theme) {
+      const details = (result.details ?? {}) as {
+        results?: Array<{ id?: string; title?: string; status?: string }>;
+      };
+      const results = details.results ?? [];
+      if (results.length === 0)
+        return new Text(theme.fg("dim", "nothing to cancel"), 0, 0);
+      return new Text(
+        results.map((entry) => renderRow(theme, entry)).join("\n"),
+        0,
+        0,
+      );
+    },
   });
 
   pi.registerTool({
@@ -540,8 +669,40 @@ export default function (pi: ExtensionAPI) {
 
       return {
         content: [{ type: "text", text }],
-        details: { id: snap.id, status: snap.status, turns: snap.turns },
+        details: {
+          id: snap.id,
+          title: snap.title,
+          status: snap.status,
+          turns: snap.turns,
+        },
       };
+    },
+
+    renderCall(args, theme) {
+      return new Text(
+        theme.fg("toolTitle", theme.bold("check ")) +
+          theme.fg("accent", args.id ?? "…"),
+        0,
+        0,
+      );
+    },
+
+    renderResult(result, { expanded }, theme) {
+      const details = (result.details ?? {}) as {
+        id?: string;
+        title?: string;
+        status?: string;
+        turns?: number;
+      };
+      let text = renderRow(theme, details);
+      if (details.turns !== undefined) {
+        text += theme.fg("dim", ` · ${details.turns} turns`);
+      }
+      if (expanded) {
+        const body = resultText(result);
+        if (body) text += `\n${theme.fg("toolOutput", body)}`;
+      }
+      return new Text(text, 0, 0);
     },
   });
 
@@ -568,6 +729,29 @@ export default function (pi: ExtensionAPI) {
           })),
         },
       };
+    },
+
+    renderCall(_args, theme) {
+      return new Text(theme.fg("toolTitle", theme.bold("subagents")), 0, 0);
+    },
+
+    renderResult(result, _options, theme) {
+      const details = (result.details ?? {}) as {
+        subagents?: Array<{
+          id?: string;
+          title?: string;
+          status?: string;
+          harness?: string;
+        }>;
+      };
+      const subs = details.subagents ?? [];
+      if (subs.length === 0)
+        return new Text(theme.fg("dim", "no subagents"), 0, 0);
+      return new Text(
+        subs.map((entry) => renderRow(theme, entry)).join("\n"),
+        0,
+        0,
+      );
     },
   });
 

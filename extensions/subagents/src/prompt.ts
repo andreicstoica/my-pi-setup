@@ -19,7 +19,7 @@ export const SUBAGENT_SPAWN_PROMPT_GUIDELINES = [
 export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
   prompt:
     "Task prompt for the subagent. Must be self-contained: include all needed context, file paths, and what to report back.",
-  name: "Short human-readable name for this subagent, shown in listings and the UI",
+  name: 'Short human-readable name for this subagent (2-4 words), shown in listings and the UI. Its slug also becomes the subagent id used by wait/check/cancel, so name it after the task ("investigate auth regression" -> sa-investigate-auth-regression), not "agent 1".',
   harness:
     'Harness to run the subagent on: "pi" (in-process pi session; inherits this environment), "claude" (Claude Code), or "codex" (Codex CLI). Choose deliberately per task.',
   workingDir:
@@ -51,7 +51,7 @@ export const SUBAGENT_WAIT_TOOL_DESCRIPTION =
 
 /** Model-facing schema description for the subagent ids to await. */
 export const SUBAGENT_WAIT_PARAMETER_DESCRIPTIONS = {
-  ids: 'Subagent ids to wait for, e.g. ["sa-1", "sa-2"]',
+  ids: 'Subagent ids to wait for, exactly as returned by subagent_spawn, e.g. ["sa-investigate-auth", "sa-audit-css"]',
 };
 
 /** Describes aborting running subagents while retaining their partial transcripts. */
@@ -60,7 +60,7 @@ export const SUBAGENT_CANCEL_TOOL_DESCRIPTION =
 
 /** Model-facing schema description for the subagent ids to cancel. */
 export const SUBAGENT_CANCEL_PARAMETER_DESCRIPTIONS = {
-  ids: 'Subagent ids to cancel, e.g. ["sa-1", "sa-2"]',
+  ids: 'Subagent ids to cancel, exactly as returned by subagent_spawn, e.g. ["sa-investigate-auth"]',
 };
 
 /** Describes nonblocking inspection of a subagent without consuming its result. */

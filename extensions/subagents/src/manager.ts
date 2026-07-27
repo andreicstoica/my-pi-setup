@@ -195,6 +195,35 @@ const makeManager = Effect.gen(function* () {
   let onSettled:
     ((snap: SubagentSnapshot, consumed: boolean) => void) | undefined;
 
+  /**
+   * Ids are derived from the spawn title so a fan-out reads as
+   * `sa-investigate-auth` rather than `sa-3`. Falls back to a counter when the
+   * title has nothing slug-worthy, and suffixes collisions since ids stay
+   * addressable (wait/check/cancel) for the life of the session.
+   */
+  const allocateId = (origin: SubagentOrigin, title: string) => {
+    const prefix = origin === "btw" ? "btw" : "sa";
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .split("-")
+      .slice(0, 4)
+      .join("-")
+      .slice(0, 32)
+      .replace(/-+$/, "");
+    if (!slug) {
+      const counter = origin === "btw" ? ++btwCounter : ++modelCounter;
+      return `${prefix}-${counter}`;
+    }
+    const base = `${prefix}-${slug}`;
+    if (!entries.has(base)) return base;
+    for (let suffix = 2; ; suffix++) {
+      const candidate = `${base}-${suffix}`;
+      if (!entries.has(candidate)) return candidate;
+    }
+  };
+
   const notify = (id?: string) => {
     const waiters = changeWaiters;
     changeWaiters = [];
@@ -466,8 +495,7 @@ const makeManager = Effect.gen(function* () {
         }
 
         const origin = task.origin ?? "model";
-        const id =
-          origin === "btw" ? `btw-${++btwCounter}` : `sa-${++modelCounter}`;
+        const id = allocateId(origin, task.title);
         const meta = yield* session.meta;
         const entry: Entry = {
           snapshot: {
