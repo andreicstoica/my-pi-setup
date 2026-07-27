@@ -1,9 +1,16 @@
 /**
- * Minimal markdown memory. One file, two zones, no database.
+ * Minimal markdown memory. Two scopes, two zones each, no database.
  *
- *   ~/.pi/agent/memory/MEMORY.md
+ *   ~/.pi/agent/memory/MEMORY.md                 global — user + harness
+ *   ~/.pi/agent/memory/projects/<owner>-<repo>.md  per repo
  *     ## Pinned   — always injected, hard-capped. Durable facts.
  *     ## Log      — append-only, newest last. Only the TAIL is injected.
+ *
+ * Project memory is keyed on the git REMOTE, not the checkout path, so every kit
+ * worktree of liftoff-app shares one file — a fact learned in one worktree is
+ * true in all of them. It lives under the agent dir rather than in the repo, so
+ * it cannot be committed into a worktree by accident, which is the failure mode
+ * a `<repo>/MEMORY.md` would eventually hit.
  *
  * The shape follows what actually survives in practice (OpenClaw's ~20KB
  * MEMORY.md plus append-only logs; ProjectMem's append-only event log projected
@@ -23,8 +30,10 @@
  * The file is deliberately gitignored — ~/.pi/agent is a PUBLIC repo.
  */
 
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { StringEnum } from "@earendil-works/pi-ai";
 import {
   getAgentDir,
   type ExtensionAPI,
@@ -54,9 +63,77 @@ function memoryPath() {
   return path.join(getAgentDir(), "memory", "MEMORY.md");
 }
 
-function read() {
+/**
+ * Repo identity for project memory. The remote URL is the key, so every kit
+ * worktree of liftoff-app maps to ONE file — worktrees are separate checkouts of
+ * the same project, and a fact learned in one is true in all of them. Falls back
+ * to the shared git dir (which worktrees also have in common) when there is no
+ * remote, and to undefined outside a repo.
+ */
+export function repoSlug(options: {
+  remoteUrl?: string;
+  gitCommonDir?: string;
+}) {
+  const remote = options.remoteUrl?.trim();
+  if (remote) {
+    const match = remote.replace(/\.git$/, "").match(/[:/]([^/:]+)\/([^/]+)$/);
+    if (match) return sanitize(`${match[1]}-${match[2]}`);
+  }
+  const common = options.gitCommonDir?.trim();
+  if (common) {
+    // `<repo>/.git` -> `<repo>`; a bare or worktree dir keeps its own name.
+    const dir =
+      path.basename(common) === ".git" ? path.dirname(common) : common;
+    const name = path.basename(dir);
+    if (name) return sanitize(name);
+  }
+  return undefined;
+}
+
+function sanitize(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .slice(0, 64);
+}
+
+function git(cwd: string, args: string[]) {
   try {
-    return fs.readFileSync(memoryPath(), "utf8");
+    return execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      timeout: 2000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Cached per cwd: this runs on every turn and shelling out to git is not free. */
+const projectPathCache = new Map<string, string | undefined>();
+
+export function projectMemoryPath(cwd: string) {
+  const cached = projectPathCache.get(cwd);
+  if (cached !== undefined || projectPathCache.has(cwd)) return cached;
+
+  const gitCommonDir = git(cwd, ["rev-parse", "--git-common-dir"]);
+  const slug = repoSlug({
+    remoteUrl: git(cwd, ["config", "--get", "remote.origin.url"]),
+    // `--git-common-dir` can be the relative ".git"; resolve against cwd.
+    gitCommonDir: gitCommonDir ? path.resolve(cwd, gitCommonDir) : undefined,
+  });
+  const resolved = slug
+    ? path.join(getAgentDir(), "memory", "projects", `${slug}.md`)
+    : undefined;
+  projectPathCache.set(cwd, resolved);
+  return resolved;
+}
+
+function readFile(target: string | undefined) {
+  if (!target) return undefined;
+  try {
+    return fs.readFileSync(target, "utf8");
   } catch {
     return undefined;
   }
@@ -101,21 +178,44 @@ export function tailEntries(log: string, maxBytes: number) {
   return kept.join("\n");
 }
 
-export function buildMemoryPrompt(text: string) {
+/** One scope's zones, rendered. Undefined when the scope has nothing to say. */
+function renderScope(text: string | undefined, heading: string) {
+  if (!text) return undefined;
   const { pinned, log } = parseSections(text);
   const window = tailEntries(log, LOG_WINDOW_BYTES);
   if (!pinned && !window) return undefined;
 
-  let prompt = "# Memory\n\nDurable facts about this user and their setup.";
-  if (pinned) prompt += `\n\n## Pinned\n\n${pinned}`;
-  if (window) {
-    prompt += `\n\n## Recent notes (newest last)\n\n${window}`;
-  }
-  prompt +=
-    `\n\nThis is the recent tail of \`${memoryPath()}\`; older notes are in that ` +
-    `file — grep it before assuming something was never recorded. Record a new ` +
-    `durable fact with the \`remember\` tool, never by editing the file directly.`;
-  return prompt;
+  let out = `## ${heading}`;
+  if (pinned) out += `\n\n### Pinned\n\n${pinned}`;
+  if (window) out += `\n\n### Recent notes (newest last)\n\n${window}`;
+  return out;
+}
+
+export function buildMemoryPrompt(sources: {
+  global?: string;
+  project?: string;
+  projectLabel?: string;
+  paths?: { global?: string; project?: string };
+}) {
+  const sections = [
+    renderScope(sources.global, "Global — the user and their harness"),
+    renderScope(
+      sources.project,
+      `Project — ${sources.projectLabel ?? "this repo"}`,
+    ),
+  ].filter((section): section is string => section !== undefined);
+  if (sections.length === 0) return undefined;
+
+  const files = [sources.paths?.global, sources.paths?.project]
+    .filter((file): file is string => Boolean(file))
+    .join(" and ");
+
+  return (
+    `# Memory\n\nDurable facts recorded across sessions.\n\n${sections.join("\n\n")}` +
+    `\n\nThese are the recent tails of ${files || "the memory files"}; older ` +
+    `notes are still in those files — grep before assuming something was never ` +
+    `recorded. Add a fact with the \`remember\` tool, never by editing the files.`
+  );
 }
 
 /** `- 2026-07-27 — text` — one line, sortable, greppable by date. */
@@ -125,8 +225,7 @@ function formatEntry(text: string) {
   return `- ${day} — ${flat}`;
 }
 
-function ensureFile() {
-  const target = memoryPath();
+function ensureFile(target: string) {
   if (!fs.existsSync(target)) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, TEMPLATE, "utf8");
@@ -152,22 +251,43 @@ export function appendToSection(
 }
 
 export default function (pi: ExtensionAPI) {
-  const remember = (input: string, pinned: boolean) => {
-    const target = ensureFile();
+  const remember = (options: {
+    fact: string;
+    pinned: boolean;
+    cwd: string;
+    scope: "project" | "global";
+  }) => {
+    const projectPath = projectMemoryPath(options.cwd);
+    // Asking for project scope outside a repo silently writing to global would
+    // hide the fact from the place it belongs, so say which file was used.
+    const target = ensureFile(
+      options.scope === "project" && projectPath ? projectPath : memoryPath(),
+    );
     const current = fs.readFileSync(target, "utf8");
-    const entry = formatEntry(input);
-    const next = appendToSection(current, pinned ? "pinned" : "log", entry);
+    const entry = formatEntry(options.fact);
+    const next = appendToSection(
+      current,
+      options.pinned ? "pinned" : "log",
+      entry,
+    );
     fs.writeFileSync(target, next, "utf8");
 
     const { pinned: pinnedText } = parseSections(next);
-    const overflow = Buffer.byteLength(pinnedText, "utf8") > PINNED_MAX_BYTES;
-    return { entry, overflow };
+    return {
+      entry,
+      target,
+      overflow: Buffer.byteLength(pinnedText, "utf8") > PINNED_MAX_BYTES,
+    };
   };
 
-  pi.on("before_agent_start", (event) => {
-    const text = read();
-    if (!text) return undefined;
-    const memory = buildMemoryPrompt(text);
+  pi.on("before_agent_start", (event, ctx) => {
+    const projectPath = projectMemoryPath(ctx.cwd);
+    const memory = buildMemoryPrompt({
+      global: readFile(memoryPath()),
+      project: readFile(projectPath),
+      projectLabel: projectPath ? path.basename(projectPath, ".md") : undefined,
+      paths: { global: memoryPath(), project: projectPath },
+    });
     if (!memory) return undefined;
     // Appending the same block each turn keeps the prefix stable, so prompt
     // caching still hits. Injecting a message instead would grow the session.
@@ -178,21 +298,36 @@ export default function (pi: ExtensionAPI) {
     name: "remember",
     label: "Remember",
     description:
-      "Append one durable fact to the user's memory file. Use for things that " +
-      "stay true across sessions and are not discoverable from the code: their " +
-      "preferences, environment quirks, decisions and the reason behind them. " +
-      "Do NOT record task state, file contents, or anything already in AGENTS.md.",
+      "Append ONE durable fact to memory. The bar is high: a fact earns a slot " +
+      "only if it will still be true and still be useful weeks from now, AND it " +
+      "cannot be recovered by reading the repo, the git history, or AGENTS.md. " +
+      "Most things fail that bar — when unsure, do not record.\n\n" +
+      "RECORD: a constraint discovered the hard way (a tool that silently " +
+      "no-ops, an credential that does not exist, a parameter whose wrong " +
+      "spelling fails quietly); a decision plus the reason it was made that way; " +
+      "a workflow the user corrected you on.\n\n" +
+      "DO NOT RECORD: anything cosmetic (themes, colours, fonts, padding); " +
+      "task or session state ('currently refactoring X'); file contents, paths " +
+      "or APIs a `read`/`rg` would show; restatements of AGENTS.md or CLAUDE.md; " +
+      "one-off answers; anything you have not verified.",
     promptSnippet:
-      "Append a durable fact about the user or their setup to memory",
+      "Record a durable, hard-won fact about this project or the user's setup",
     promptGuidelines: [
-      "Call remember when the user states a durable preference, or when you learn a non-obvious environment fact the hard way.",
-      "One fact per call, phrased so it still makes sense months later. Pin only what must never be evicted from context.",
+      "Call remember only for a fact that survives the session AND is not discoverable from the repo — a silent failure mode, a decision and its reason, a correction the user made. Cosmetic preferences and task state never qualify.",
+      "Default to project scope; use global only for facts about the user or the pi harness itself that hold in every repo.",
+      "One fact per call, self-contained, absolute dates. Pin only hard constraints that must never fall out of context.",
     ],
     parameters: Type.Object({
       fact: Type.String({
         description:
           "The fact, one or two sentences, self-contained. Absolute dates, not 'today'.",
       }),
+      scope: Type.Optional(
+        StringEnum(["project", "global"] as const, {
+          description:
+            "project (default) = true of this repo, shared by all its worktrees. global = true of the user or the pi harness everywhere.",
+        }),
+      ),
       pinned: Type.Optional(
         Type.Boolean({
           description:
@@ -200,72 +335,102 @@ export default function (pi: ExtensionAPI) {
         }),
       ),
     }),
-    async execute(_toolCallId, params) {
-      const { entry, overflow } = remember(params.fact, params.pinned === true);
-      let text = `Recorded in ${memoryPath()}:\n${entry}`;
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const scope = params.scope ?? "project";
+      const { entry, target, overflow } = remember({
+        fact: params.fact,
+        pinned: params.pinned === true,
+        cwd: ctx.cwd,
+        scope,
+      });
+      let text = `Recorded in ${target}:\n${entry}`;
+      if (scope === "project" && !projectMemoryPath(ctx.cwd)) {
+        text += `\n\nNote: ${ctx.cwd} is not in a git repo, so this went to global memory.`;
+      }
       if (overflow) {
         text +=
           `\n\nPinned section now exceeds ${PINNED_MAX_BYTES} bytes — it rides in ` +
           `every turn, so tell the user to run /memory-compact.`;
       }
-      return { content: [{ type: "text", text }], details: { entry } };
+      return { content: [{ type: "text", text }], details: { entry, target } };
     },
   });
 
-  pi.registerCommand("remember", {
-    description: "Append a fact to memory (prefix with ! to pin it)",
-    handler: async (args, ctx) => {
-      const input = args.trim();
-      if (!input) {
+  const registerRemember = (name: string, scope: "project" | "global") => {
+    pi.registerCommand(name, {
+      description:
+        `Append a fact to ${scope} memory (prefix with ! to pin it)` +
+        (scope === "project" ? " — shared by every worktree of this repo" : ""),
+      handler: async (args, ctx) => {
+        const input = args.trim();
+        if (!input) {
+          ctx.ui.notify(`usage: /${name} <fact>  (!<fact> to pin)`, "warning");
+          return;
+        }
+        const pinned = input.startsWith("!");
+        const { entry, target, overflow } = remember({
+          fact: pinned ? input.slice(1) : input,
+          pinned,
+          cwd: ctx.cwd,
+          scope,
+        });
         ctx.ui.notify(
-          "usage: /remember <fact>  (or /remember !<fact> to pin)",
-          "warning",
+          `${pinned ? "pinned" : "remembered"} in ${path.basename(target)}: ${entry}`,
+          "info",
         );
-        return;
-      }
-      const pinned = input.startsWith("!");
-      const { entry, overflow } = remember(
-        pinned ? input.slice(1) : input,
-        pinned,
-      );
-      ctx.ui.notify(`${pinned ? "pinned" : "remembered"}: ${entry}`, "info");
-      if (overflow)
-        ctx.ui.notify(
-          "pinned section is over budget — /memory-compact",
-          "warning",
-        );
-    },
-  });
+        if (overflow)
+          ctx.ui.notify(
+            "pinned section is over budget — /memory-compact",
+            "warning",
+          );
+      },
+    });
+  };
+
+  registerRemember("remember", "project");
+  registerRemember("remember-global", "global");
 
   pi.registerCommand("memory", {
-    description: "Show the memory file path and what is currently in context",
+    description:
+      "Show which memory files are loaded and how much is in context",
     handler: async (_args, ctx) => {
-      const text = read();
-      if (!text) {
-        ctx.ui.notify(`no memory yet — ${memoryPath()}`, "info");
-        return;
-      }
-      const { pinned, log } = parseSections(text);
-      const entries = log ? log.split(/\n(?=- )/).length : 0;
-      const injected = tailEntries(log, LOG_WINDOW_BYTES);
-      const shown = injected ? injected.split(/\n(?=- )/).length : 0;
-      ctx.ui.notify(
-        `${memoryPath()} — ${Buffer.byteLength(pinned, "utf8")}B pinned, ` +
-          `${shown}/${entries} log entries in context`,
-        "info",
-      );
+      const projectPath = projectMemoryPath(ctx.cwd);
+      const lines = (
+        [
+          ["global", memoryPath()],
+          ["project", projectPath],
+        ] as const
+      ).map(([label, file]) => {
+        if (!file) return `${label}: (not in a git repo)`;
+        const text = readFile(file);
+        if (!text) return `${label}: (none yet) ${file}`;
+        const { pinned, log } = parseSections(text);
+        const total = log ? log.split(/\n(?=- )/).length : 0;
+        const injected = tailEntries(log, LOG_WINDOW_BYTES);
+        const shown = injected ? injected.split(/\n(?=- )/).length : 0;
+        return (
+          `${label}: ${Buffer.byteLength(pinned, "utf8")}B pinned, ` +
+          `${shown}/${total} log entries in context — ${file}`
+        );
+      });
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 
   pi.registerCommand("memory-compact", {
-    description: "Ask the agent to prune and dedupe the memory file",
-    handler: async (_args, _ctx) => {
+    description:
+      "Ask the agent to prune and dedupe memory (project by default)",
+    handler: async (args, ctx) => {
+      const wantsGlobal = args.trim() === "global";
+      const target = wantsGlobal
+        ? memoryPath()
+        : (projectMemoryPath(ctx.cwd) ?? memoryPath());
       pi.sendUserMessage(
-        `Compact ${memoryPath()}. Read it, then rewrite it in place: merge ` +
-          `duplicates, drop what is stale or now obvious, keep Pinned under ` +
-          `${PINNED_MAX_BYTES} bytes, preserve the two headings and the ` +
-          `\`- YYYY-MM-DD — fact\` line format, and keep the newest wording when ` +
-          `two entries disagree. Show me a diff summary of what you removed.`,
+        `Compact ${target}. Read it, then rewrite it in place: merge duplicates, ` +
+          `drop anything stale, cosmetic, or now discoverable from the repo, keep ` +
+          `Pinned under ${PINNED_MAX_BYTES} bytes, preserve the two headings and ` +
+          `the \`- YYYY-MM-DD — fact\` line format, and keep the newest wording ` +
+          `when two entries disagree. Show me what you removed and why.`,
       );
     },
   });

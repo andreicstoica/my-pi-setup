@@ -4,6 +4,7 @@ import {
   appendToSection,
   buildMemoryPrompt,
   parseSections,
+  repoSlug,
   tailEntries,
 } from "./index.ts";
 
@@ -56,9 +57,9 @@ test("multi-line entries stay attached to their bullet", () => {
 test("pinned facts survive a full log window", () => {
   // The whole point of two zones: a pure tail would evict the safety rail.
   const log = Array.from({ length: 400 }, (_, i) => `- entry ${i}`).join("\n");
-  const prompt = buildMemoryPrompt(
-    `## Pinned\n\n- never do X\n\n## Log\n\n${log}`,
-  );
+  const prompt = buildMemoryPrompt({
+    global: `## Pinned\n\n- never do X\n\n## Log\n\n${log}`,
+  });
   assert.ok(prompt);
   assert.match(prompt, /never do X/);
   assert.match(prompt, /entry 399/);
@@ -68,15 +69,18 @@ test("pinned facts survive a full log window", () => {
 test("an empty memory file injects nothing", () => {
   // Otherwise every turn pays for a header announcing there are no memories.
   assert.equal(
-    buildMemoryPrompt("# Memory\n\n## Pinned\n\n## Log\n"),
+    buildMemoryPrompt({ global: "# Memory\n\n## Pinned\n\n## Log\n" }),
     undefined,
   );
 });
 
 test("the prompt tells the model the window is partial", () => {
-  const prompt = buildMemoryPrompt(FILE);
+  const prompt = buildMemoryPrompt({
+    global: FILE,
+    paths: { global: "/g.md" },
+  });
   assert.ok(prompt);
-  assert.match(prompt, /grep it before assuming/);
+  assert.match(prompt, /grep before assuming/);
 });
 
 test("appending lands inside the right section", () => {
@@ -102,4 +106,54 @@ test("a missing section is created rather than dropping the entry", () => {
     "- 2026-01-05 — first ever",
   );
   assert.match(next, /## Log\n\n- 2026-01-05 — first ever/);
+});
+
+test("every worktree of a repo maps to one project file", () => {
+  // kit gives each feature its own worktree; a fact learned in one holds in all
+  // of them, so the remote — not the checkout path — is the key.
+  const master = repoSlug({
+    remoteUrl: "https://github.com/liftoff-inc/liftoff-app.git",
+    gitCommonDir: "/Users/acs/liftoff/liftoff-app-master/.git",
+  });
+  const worktree = repoSlug({
+    remoteUrl: "https://github.com/liftoff-inc/liftoff-app.git",
+    gitCommonDir: "/Users/acs/liftoff/liftoff-app-master/.git",
+  });
+  assert.equal(master, "liftoff-inc-liftoff-app");
+  assert.equal(worktree, master);
+  // SSH remotes name the same project as HTTPS ones.
+  assert.equal(
+    repoSlug({ remoteUrl: "git@github.com:liftoff-inc/liftoff-app.git" }),
+    master,
+  );
+});
+
+test("a repo with no remote still gets a stable key", () => {
+  assert.equal(repoSlug({ gitCommonDir: "/Users/acs/code/kit/.git" }), "kit");
+  assert.equal(repoSlug({}), undefined);
+});
+
+test("both scopes are labelled so the model knows where a fact came from", () => {
+  const prompt = buildMemoryPrompt({
+    global: "## Pinned\n\n- global rail\n\n## Log\n\n- g1",
+    project: "## Pinned\n\n## Log\n\n- p1",
+    projectLabel: "liftoff-inc-liftoff-app",
+    paths: { global: "/g.md", project: "/p.md" },
+  });
+  assert.ok(prompt);
+  assert.match(prompt, /## Global/);
+  assert.match(prompt, /## Project — liftoff-inc-liftoff-app/);
+  assert.match(prompt, /global rail/);
+  assert.match(prompt, /- p1/);
+  assert.match(prompt, /\/g\.md and \/p\.md/);
+});
+
+test("project-only memory renders without an empty global section", () => {
+  const prompt = buildMemoryPrompt({
+    project: "## Pinned\n\n## Log\n\n- p1",
+    projectLabel: "kit",
+  });
+  assert.ok(prompt);
+  assert.doesNotMatch(prompt, /## Global/);
+  assert.match(prompt, /## Project — kit/);
 });
