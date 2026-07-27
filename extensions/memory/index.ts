@@ -218,10 +218,21 @@ export function buildMemoryPrompt(sources: {
   );
 }
 
-/** `- 2026-07-27 — text` — one line, sortable, greppable by date. */
-function formatEntry(text: string) {
-  const day = new Date().toISOString().slice(0, 10);
-  const flat = text.replace(/\s+/g, " ").trim();
+/**
+ * `- 2026-07-27 — text` — one line, sortable, greppable by date.
+ *
+ * A leading bullet and/or date on the incoming fact is stripped first: a model
+ * that has read the file often mimics the format it saw, which stamped entries
+ * as `- 2026-07-27 — 2026-07-27 — …` once observed in the wild.
+ */
+export function formatEntry(text: string, today = new Date()) {
+  const day = today.toISOString().slice(0, 10);
+  const flat = text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^-\s+/, "")
+    .replace(/^\d{4}-\d{2}-\d{2}\s*[—–-]\s*/, "")
+    .trim();
   return `- ${day} — ${flat}`;
 }
 

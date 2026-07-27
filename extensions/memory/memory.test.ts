@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   appendToSection,
   buildMemoryPrompt,
+  formatEntry,
   parseSections,
   repoSlug,
   tailEntries,
@@ -156,4 +157,31 @@ test("project-only memory renders without an empty global section", () => {
   assert.ok(prompt);
   assert.doesNotMatch(prompt, /## Global/);
   assert.match(prompt, /## Project — kit/);
+});
+
+test("an incoming fact cannot get double-stamped", () => {
+  // Seen in the wild: a model that had read the file echoed its line format
+  // back, producing `- 2026-07-27 — 2026-07-27 — …`.
+  const day = new Date("2026-07-27T12:00:00Z");
+  assert.equal(
+    formatEntry("2026-07-27 — do not auto-push", day),
+    "- 2026-07-27 — do not auto-push",
+  );
+  assert.equal(
+    formatEntry("- 2026-07-27 — do not auto-push", day),
+    "- 2026-07-27 — do not auto-push",
+  );
+  assert.equal(
+    formatEntry("do not auto-push", day),
+    "- 2026-07-27 — do not auto-push",
+  );
+});
+
+test("a date INSIDE the fact is left alone", () => {
+  // Only a leading stamp is stripped; "as of 2026-07" is content.
+  const day = new Date("2026-07-27T12:00:00Z");
+  assert.match(
+    formatEntry("backend is uv as of 2026-07-01", day),
+    /— backend is uv as of 2026-07-01$/,
+  );
 });
