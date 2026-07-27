@@ -69,7 +69,10 @@ export function parseSections(text: string) {
   const pinned =
     pinnedAt === -1
       ? ""
-      : text.slice(pinnedAt + PINNED_HEADING.length, logAt === -1 ? undefined : logAt);
+      : text.slice(
+          pinnedAt + PINNED_HEADING.length,
+          logAt === -1 ? undefined : logAt,
+        );
   const log = logAt === -1 ? "" : text.slice(logAt + LOG_HEADING.length);
   return { pinned: pinned.trim(), log: log.trim() };
 }
@@ -93,7 +96,8 @@ export function tailEntries(log: string, maxBytes: number) {
     bytes += size;
   }
   // A single entry larger than the whole budget still beats returning nothing.
-  if (kept.length === 0 && entries.length > 0) return entries[entries.length - 1]!;
+  if (kept.length === 0 && entries.length > 0)
+    return entries[entries.length - 1]!;
   return kept.join("\n");
 }
 
@@ -178,7 +182,8 @@ export default function (pi: ExtensionAPI) {
       "stay true across sessions and are not discoverable from the code: their " +
       "preferences, environment quirks, decisions and the reason behind them. " +
       "Do NOT record task state, file contents, or anything already in AGENTS.md.",
-    promptSnippet: "Append a durable fact about the user or their setup to memory",
+    promptSnippet:
+      "Append a durable fact about the user or their setup to memory",
     promptGuidelines: [
       "Call remember when the user states a durable preference, or when you learn a non-obvious environment fact the hard way.",
       "One fact per call, phrased so it still makes sense months later. Pin only what must never be evicted from context.",
@@ -212,13 +217,23 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const input = args.trim();
       if (!input) {
-        ctx.ui.notify("usage: /remember <fact>  (or /remember !<fact> to pin)", "warning");
+        ctx.ui.notify(
+          "usage: /remember <fact>  (or /remember !<fact> to pin)",
+          "warning",
+        );
         return;
       }
       const pinned = input.startsWith("!");
-      const { entry, overflow } = remember(pinned ? input.slice(1) : input, pinned);
+      const { entry, overflow } = remember(
+        pinned ? input.slice(1) : input,
+        pinned,
+      );
       ctx.ui.notify(`${pinned ? "pinned" : "remembered"}: ${entry}`, "info");
-      if (overflow) ctx.ui.notify("pinned section is over budget — /memory-compact", "warning");
+      if (overflow)
+        ctx.ui.notify(
+          "pinned section is over budget — /memory-compact",
+          "warning",
+        );
     },
   });
 

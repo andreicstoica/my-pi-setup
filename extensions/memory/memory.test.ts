@@ -56,7 +56,9 @@ test("multi-line entries stay attached to their bullet", () => {
 test("pinned facts survive a full log window", () => {
   // The whole point of two zones: a pure tail would evict the safety rail.
   const log = Array.from({ length: 400 }, (_, i) => `- entry ${i}`).join("\n");
-  const prompt = buildMemoryPrompt(`## Pinned\n\n- never do X\n\n## Log\n\n${log}`);
+  const prompt = buildMemoryPrompt(
+    `## Pinned\n\n- never do X\n\n## Log\n\n${log}`,
+  );
   assert.ok(prompt);
   assert.match(prompt, /never do X/);
   assert.match(prompt, /entry 399/);
@@ -65,7 +67,10 @@ test("pinned facts survive a full log window", () => {
 
 test("an empty memory file injects nothing", () => {
   // Otherwise every turn pays for a header announcing there are no memories.
-  assert.equal(buildMemoryPrompt("# Memory\n\n## Pinned\n\n## Log\n"), undefined);
+  assert.equal(
+    buildMemoryPrompt("# Memory\n\n## Pinned\n\n## Log\n"),
+    undefined,
+  );
 });
 
 test("the prompt tells the model the window is partial", () => {
@@ -84,11 +89,17 @@ test("appending lands inside the right section", () => {
 });
 
 test("appending to the log puts the entry last", () => {
-  const { log } = parseSections(appendToSection(FILE, "log", "- 2026-01-04 — third"));
+  const { log } = parseSections(
+    appendToSection(FILE, "log", "- 2026-01-04 — third"),
+  );
   assert.equal(log.split("\n").at(-1), "- 2026-01-04 — third");
 });
 
 test("a missing section is created rather than dropping the entry", () => {
-  const next = appendToSection("# Memory\n", "log", "- 2026-01-05 — first ever");
+  const next = appendToSection(
+    "# Memory\n",
+    "log",
+    "- 2026-01-05 — first ever",
+  );
   assert.match(next, /## Log\n\n- 2026-01-05 — first ever/);
 });
