@@ -1,5 +1,6 @@
 /**
- * Colour tool titles by what the tool *does*, not uniformly.
+ * Two jobs, one seam: colour tool titles by what the tool *does*, and wash diff
+ * rows with a faint tint of their own colour.
  *
  * Every built-in pi tool renders its title through `theme.fg("toolTitle", …)`
  * (see `dist/core/tools/*.js`) and there is no extension hook for re-rendering
@@ -22,6 +23,7 @@
 import { Theme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { decorateTitle, FALLBACK_COLOR, shouldRemap } from "./src/colors.ts";
+import { BACKGROUND_KEY, TINTED_KEYS, tintSequence } from "./src/diff-tint.ts";
 
 type FgMethod = (color: string, text: string) => string;
 type PatchedFg = FgMethod & { __toolColors?: boolean };
@@ -32,6 +34,9 @@ type PatchedFg = FgMethod & { __toolColors?: boolean };
  * this module cannot double-wrap (and unlike a Proxy + `defineProperty`, the
  * marker cannot silently land on a different object than the one it guards).
  */
+/** Derived tints, keyed by theme instance then colour token. */
+const tintCache = new WeakMap<object, Map<string, string | undefined>>();
+
 function patchThemePrototype() {
   const prototype = Theme?.prototype as { fg?: PatchedFg } | undefined;
   const original = prototype?.fg;
@@ -60,7 +65,33 @@ function patchThemePrototype() {
       }
       return original.call(this, color, decorated);
     }
-    return original.call(this, color, text);
+
+    const rendered = original.call(this, color, text);
+    if (!TINTED_KEYS.has(color)) return rendered;
+
+    // Per theme instance: a theme switch installs a new Theme, and a stale
+    // cache would wash today's rows in yesterday's palette.
+    let perTheme = tintCache.get(this);
+    if (!perTheme) {
+      perTheme = new Map();
+      tintCache.set(this, perTheme);
+    }
+    if (!perTheme.has(color)) {
+      let tint: string | undefined;
+      try {
+        // Probe through the ORIGINAL fg: calling this.fg would recurse.
+        tint = tintSequence(
+          original.call(this, color, ""),
+          this.bg(BACKGROUND_KEY, ""),
+        );
+      } catch {
+        tint = undefined;
+      }
+      perTheme.set(color, tint);
+    }
+    const tint = perTheme.get(color);
+    // Reset the background only; the caller may still be in a foreground run.
+    return tint ? `${tint}${rendered}\x1b[49m` : rendered;
   };
   patched.__toolColors = true;
   prototype!.fg = patched;

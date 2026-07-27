@@ -5,7 +5,7 @@ import {
   blend,
   parseTruecolor,
   tintSequence,
-} from "./index.ts";
+} from "./src/diff-tint.ts";
 
 test("reads rgb out of both foreground and background sequences", () => {
   assert.deepEqual(parseTruecolor("\x1b[38;2;63;149;58m"), [63, 149, 58]);
@@ -55,4 +55,14 @@ test("blend clamps out-of-range amounts", () => {
 test("emits a background sequence, never a foreground one", () => {
   // A stray 38;2 here would recolour the text and hide the diff colour.
   assert.equal(backgroundSequence([1, 2, 3]), "\x1b[48;2;1;2;3m");
+});
+
+test("the tint rides the same fg patch as tool titles", async () => {
+  // One patch site, one marker — two wrappers would raise an ordering question
+  // that neither extension could answer on its own.
+  const source = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("./index.ts", import.meta.url), "utf8"),
+  );
+  assert.equal(source.match(/prototype!?\.fg = /g)?.length, 1);
+  assert.match(source, /TINTED_KEYS\.has\(color\)/);
 });
