@@ -7,11 +7,13 @@ import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   formatSize,
+  keyHint,
   truncateHead,
   type AgentToolResult,
   type AgentToolUpdateCallback,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Cause, Data, Effect, Exit } from "effect";
 import { Firecrawl, type CrawlJob, type CrawlOptions } from "firecrawl";
 import { Type } from "typebox";
@@ -231,6 +233,106 @@ async function runFirecrawl<T>(
   throw operationError(operation, Cause.squash(exit.cause));
 }
 
+interface ThemeLike {
+  fg(color: string, text: string): string;
+  bold(text: string): string;
+}
+
+/** One normalized row, whatever source (web/news/images) produced it. */
+interface SearchRow {
+  url?: string;
+  title?: string;
+  snippet?: string;
+  extra?: string;
+}
+
+const SEARCH_COLLAPSED_ROWS = 5;
+
+function hostOf(url: string | undefined) {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url.replace(/^https?:\/\/(www\.)?/, "").split("/")[0] ?? "";
+  }
+}
+
+function oneLine(text: string | undefined, max: number) {
+  if (!text) return "";
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/** Firecrawl returns either a bare result or a scraped Document per source. */
+function toRows(value: unknown): SearchRow[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const entry = (item ?? {}) as Record<string, unknown>;
+    const metadata = (entry.metadata ?? {}) as Record<string, unknown>;
+    const url =
+      typeof entry.url === "string"
+        ? entry.url
+        : typeof metadata.sourceURL === "string"
+          ? metadata.sourceURL
+          : undefined;
+    const title =
+      typeof entry.title === "string"
+        ? entry.title
+        : typeof metadata.title === "string"
+          ? metadata.title
+          : undefined;
+    const snippet = [
+      entry.description,
+      entry.snippet,
+      metadata.description,
+      entry.markdown,
+    ].find((candidate): candidate is string => typeof candidate === "string");
+    const extra = [
+      typeof entry.date === "string" ? entry.date : undefined,
+      typeof entry.imageWidth === "number" &&
+      typeof entry.imageHeight === "number"
+        ? `${entry.imageWidth}×${entry.imageHeight}`
+        : undefined,
+      typeof entry.markdown === "string"
+        ? `${formatSize(Buffer.byteLength(entry.markdown, "utf8"))} scraped`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return { url, title, snippet, extra: extra || undefined };
+  });
+}
+
+export function searchGroups(details: unknown) {
+  const data = (details ?? {}) as Record<string, unknown>;
+  return (["web", "news", "images"] as const)
+    .map((source) => ({ source, rows: toRows(data[source]) }))
+    .filter((group) => group.rows.length > 0);
+}
+
+function renderSearchRow(
+  row: SearchRow,
+  index: number,
+  theme: ThemeLike,
+  expanded: boolean,
+) {
+  const number = theme.fg("dim", `${(index + 1).toString().padStart(2)}. `);
+  const host = hostOf(row.url);
+  let text =
+    number +
+    theme.fg(
+      "accent",
+      oneLine(row.title, expanded ? 120 : 72) || host || "(untitled)",
+    );
+  if (host) text += theme.fg("muted", `  ${host}`);
+  if (row.extra) text += theme.fg("dim", `  ${row.extra}`);
+  if (!expanded) return text;
+  if (row.url) text += `\n    ${theme.fg("dim", row.url)}`;
+  const snippet = oneLine(row.snippet, 240);
+  if (snippet) text += `\n    ${theme.fg("toolOutput", snippet)}`;
+  return text;
+}
+
 export default function firecrawlTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "search",
@@ -275,6 +377,47 @@ export default function firecrawlTools(pi: ExtensionAPI) {
             }),
           ).pipe(Effect.map((result) => ({ details: result, output: result }))),
       ),
+
+    renderCall(args, theme) {
+      let text = theme.fg("toolTitle", theme.bold("search "));
+      text += theme.fg("accent", args.query ? `"${args.query}"` : "…");
+      const flags = [
+        args.source && args.source !== "web" ? args.source : undefined,
+        args.limit !== undefined ? `limit=${args.limit}` : undefined,
+        args.scrapeResults ? "scraped" : undefined,
+      ].filter((flag): flag is string => typeof flag === "string");
+      if (flags.length > 0) text += " " + theme.fg("dim", flags.join(" "));
+      return new Text(text, 0, 0);
+    },
+
+    renderResult(result, { expanded, isPartial }, theme) {
+      if (isPartial) return new Text(theme.fg("warning", "Searching…"), 0, 0);
+
+      const groups = searchGroups(result.details);
+      const total = groups.reduce((sum, group) => sum + group.rows.length, 0);
+      if (total === 0) return new Text(theme.fg("dim", "No results"), 0, 0);
+
+      let text = theme.fg(
+        "success",
+        `${total} ${total === 1 ? "result" : "results"}`,
+      );
+      for (const group of groups) {
+        if (groups.length > 1) {
+          text += `\n${theme.fg("muted", group.source)}`;
+        }
+        const shown = expanded
+          ? group.rows
+          : group.rows.slice(0, SEARCH_COLLAPSED_ROWS);
+        for (const [index, row] of shown.entries()) {
+          text += `\n${renderSearchRow(row, index, theme, expanded)}`;
+        }
+        const hidden = group.rows.length - shown.length;
+        if (hidden > 0) {
+          text += `\n${theme.fg("dim", `    … +${hidden} more (${keyHint("app.tools.expand", "to expand")})`)}`;
+        }
+      }
+      return new Text(text, 0, 0);
+    },
   });
 
   pi.registerTool({

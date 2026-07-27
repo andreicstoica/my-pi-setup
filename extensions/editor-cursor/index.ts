@@ -30,6 +30,18 @@ import { CURSOR_MARKER, Editor, Input } from "@earendil-works/pi-tui";
 /** The exact shape pi draws: reverse video around one grapheme (or a space). */
 const FAKE_CURSOR = /\x1b\[7m(.*?)\x1b\[0m/;
 
+/**
+ * Atomic markers pi segments as a single grapheme: paster's image placeholders
+ * (`[#image 1]`, merged by PasterEditor's `segment` override) and the editor's
+ * own paste markers. Because they are one grapheme, pi's cursor already wraps
+ * the *whole* marker in reverse video — so keeping the drawn cursor for exactly
+ * these gives a block highlight over the entire token while the terminal's bar
+ * still marks the caret at its leading edge. Anything else is a real character
+ * and gets stripped as usual.
+ */
+const ATOMIC_MARKER =
+  /^(?:\[#image \d+\]|\[paste #\d+(?: (?:\+\d+ lines|\d+ chars))?\])$/;
+
 type RenderFn = (width: number) => string[];
 type PatchedRender = RenderFn & { __hardwareCursorOnly?: boolean };
 type Renderable = { prototype?: { render?: PatchedRender } };
@@ -39,7 +51,11 @@ function stripFakeCursor(lines: string[]) {
   return lines.map((line) =>
     // Only the line holding the marker can hold the fake cursor, and only one
     // cursor exists, so a single non-global replace is enough.
-    line.includes(CURSOR_MARKER) ? line.replace(FAKE_CURSOR, "$1") : line,
+    line.includes(CURSOR_MARKER)
+      ? line.replace(FAKE_CURSOR, (drawn, inner: string) =>
+          ATOMIC_MARKER.test(inner) ? drawn : inner,
+        )
+      : line,
   );
 }
 

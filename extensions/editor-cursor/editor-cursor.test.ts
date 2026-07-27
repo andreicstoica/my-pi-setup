@@ -5,8 +5,14 @@ import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 // Mirrors the strip in ../index.ts. Kept here rather than exported from the
 // extension because the extension's only job is to install it on a prototype.
 const FAKE_CURSOR = /\x1b\[7m(.*?)\x1b\[0m/;
+const ATOMIC_MARKER =
+  /^(?:\[#image \d+\]|\[paste #\d+(?: (?:\+\d+ lines|\d+ chars))?\])$/;
 const strip = (line: string) =>
-  line.includes(CURSOR_MARKER) ? line.replace(FAKE_CURSOR, "$1") : line;
+  line.includes(CURSOR_MARKER)
+    ? line.replace(FAKE_CURSOR, (drawn, inner: string) =>
+        ATOMIC_MARKER.test(inner) ? drawn : inner,
+      )
+    : line;
 
 test("removes the drawn block but keeps the character", () => {
   // Shape from pi-tui editor.js:436 — reverse video around one grapheme.
@@ -40,6 +46,30 @@ test("strips only one cursor even if reverse video appears twice", () => {
   // reverse-video run that belongs to something else.
   const line = `${CURSOR_MARKER}\x1b[7ma\x1b[0m mid \x1b[7mb\x1b[0m`;
   assert.equal(strip(line), `${CURSOR_MARKER}a mid \x1b[7mb\x1b[0m`);
+});
+
+test("keeps the block highlight over an atomic image placeholder", () => {
+  // PasterEditor merges `[#image 1]` into one grapheme, so pi's drawn cursor
+  // already covers the whole token. Keeping it is the hover highlight.
+  const line = `look ${CURSOR_MARKER}\x1b[7m[#image 1]\x1b[0m tail`;
+  assert.equal(strip(line), line);
+});
+
+test("keeps the block highlight over a paste marker", () => {
+  for (const marker of [
+    "[paste #1]",
+    "[paste #2 +12 lines]",
+    "[paste #3 84 chars]",
+  ]) {
+    const line = `${CURSOR_MARKER}\x1b[7m${marker}\x1b[0m`;
+    assert.equal(strip(line), line, marker);
+  }
+});
+
+test("a lone bracket character is still a character, not a marker", () => {
+  // Typing `[` must not be mistaken for an atomic span and keep a block.
+  const line = `${CURSOR_MARKER}\x1b[7m[\x1b[0m#image`;
+  assert.equal(strip(line), `${CURSOR_MARKER}[#image`);
 });
 
 test("the marker pi emits is what we key on", () => {
