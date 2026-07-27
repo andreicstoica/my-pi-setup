@@ -6,6 +6,9 @@ bin/
 
 # Pi runtime and private state
 sessions/
+# Memory content is personal notes about the user's work; this repo is public.
+# Root-anchored: the extension at extensions/memory/ IS committed, its data is not.
+/memory/
 /workflows/
 auth.json
 settings.json
