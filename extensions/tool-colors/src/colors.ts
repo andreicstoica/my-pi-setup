@@ -30,9 +30,13 @@ export const FALLBACK_COLOR = "toolTitle";
  * `$ <command>`. Extension tools follow the same one-word convention.
  */
 const KIND_PATTERNS: ReadonlyArray<readonly [TitleKind, RegExp]> = [
-  ["shell", /^\$/],
-  ["mutate", /^(write|edit|apply_patch|multi_edit)\b/],
-  ["read", /^(read|ls|find|grep|fd|rg|glob|tree)\b/],
+  // bg_* spawns and inspects real processes, so it belongs with the shell.
+  ["shell", /^(\$|bg_)/],
+  // remember writes to the memory file; same consequence class as edit/write.
+  ["mutate", /^(write|edit|apply_patch|multi_edit|remember)\b/],
+  // git_diff/show/log only read history — the same "looking, not touching"
+  // class as read/grep, which is what the colour needs to convey.
+  ["read", /^(read|ls|find|grep|fd|rg|glob|tree|git_)/],
   [
     "remote",
     /^(subagent|workflow|terminal|firecrawl|search|scrape|crawl|fetch|web)/,

@@ -31,6 +31,22 @@ test("classifies extension tools", () => {
   assert.equal(classify("rg pattern"), "read");
 });
 
+test("git reads are reads, not a fourth thing", () => {
+  // git_diff/show/log look at history without touching the tree, so colouring
+  // them like read/grep keeps the palette at four consequence classes.
+  for (const title of ["git_diff", "git_log", "git_show"]) {
+    assert.equal(classify(title), "read", title);
+  }
+});
+
+test("background terminals are shell, memory writes are mutations", () => {
+  // bg_* runs real processes; remember writes a file. Both reuse an existing
+  // colour rather than inventing one, which is the point.
+  assert.equal(classify("bg_start"), "shell");
+  assert.equal(classify("bg_kill"), "shell");
+  assert.equal(classify("remember"), "mutate");
+});
+
 test("leaves unrecognised titles on the default token", () => {
   assert.equal(classify("todo_write"), undefined);
   assert.equal(colorFor("todo_write"), "toolTitle");
