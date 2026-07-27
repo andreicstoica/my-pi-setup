@@ -52,7 +52,7 @@
     "mdCodeBlock": "fg2",
     "mdCodeBlockBorder": "bg3",
     "mdQuote": "fg4",
-    "mdQuoteBorder": "accent",
+    "mdQuoteBorder": "yellow",
     "mdHr": "bg3",
     "mdListBullet": "orange",
     "toolDiffAdded": "green",
