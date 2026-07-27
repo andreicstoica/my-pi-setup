@@ -13,7 +13,7 @@
  * `ctx.ui.setTheme(wrapped)` — is wrong here: `setTheme(instance)` routes to
  * the controller's `setThemeInstance()`, which calls `setAutoSync(false)` and
  * sets `activeThemeName = "<in-memory>"` (theme-controller.js:46-49). That
- * would silently kill the `"ayu-light/gruvbox-dark-hard"` auto-switching and
+ * would silently kill the `"one-light/gruvbox-dark-hard"` auto-switching and
  * confuse `/settings`.
  *
  * This is a monkey-patch of an undocumented surface, so it verifies the shape
