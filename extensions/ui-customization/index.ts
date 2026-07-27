@@ -183,12 +183,19 @@ function formatWorktree(cwd: string) {
   return name ? sanitizeTerminalLabel(name) : formatDirectory(cwd);
 }
 
-function formatWindows(windows: readonly UsageWindowState[]) {
+/**
+ * Window labels disambiguate between windows, so they only earn their space when
+ * there is more than one. Codex reports a single weekly window, where "7d" said
+ * nothing the reset countdown beside it did not already imply; Claude reports
+ * both 5h and 7d, which do need telling apart.
+ */
+export function formatWindows(windows: readonly UsageWindowState[]) {
+  const showLabels = windows.length > 1;
   return windows
-    .map(
-      (w) =>
-        `${w.label} ${w.remainingPercent}%${w.resetIn ? ` (${w.resetIn})` : ""}`,
-    )
+    .map((w) => {
+      const head = showLabels ? `${w.label} ` : "";
+      return `${head}${w.remainingPercent}%${w.resetIn ? ` (${w.resetIn})` : ""}`;
+    })
     .join(" ");
 }
 
