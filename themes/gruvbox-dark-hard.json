@@ -50,7 +50,7 @@
     "mdLinkUrl": "gray",
     "mdCode": "aqua",
     "mdCodeBlock": "fg2",
-    "mdCodeBlockBorder": "bg3",
+    "mdCodeBlockBorder": "bg",
     "mdQuote": "fg4",
     "mdQuoteBorder": "yellow",
     "mdHr": "bg3",
