@@ -224,6 +224,8 @@ export default function (pi: ExtensionAPI) {
   };
 
   const deliverResult = (snap: SubagentSnapshot) => {
+    const apiFailure =
+      snap.status !== "error" && looksLikeApiFailure(snap.finalText ?? "");
     pi.sendMessage(
       {
         customType: "subagent-result",
@@ -235,7 +237,12 @@ export default function (pi: ExtensionAPI) {
           output: truncatedOutput(snap),
         }),
         display: true,
-        details: { id: snap.id, title: snap.title, status: snap.status },
+        details: {
+          id: snap.id,
+          title: snap.title,
+          status: snap.status,
+          apiFailure,
+        },
       },
       { deliverAs: "followUp", triggerTurn: true },
     );
@@ -796,16 +803,20 @@ export default function (pi: ExtensionAPI) {
         id?: string;
         title?: string;
         status?: string;
+        apiFailure?: boolean;
       };
-      const failed = details.status === "error";
+      const failed = details.status === "error" || details.apiFailure === true;
       const icon = failed ? theme.fg("error", "x") : theme.fg("success", "■");
+      const verb =
+        details.status === "error"
+          ? "failed"
+          : details.apiFailure
+            ? "failed (API error)"
+            : "finished";
       const header =
         `${icon} ` +
         theme.fg("accent", theme.bold(`subagent ${details.id ?? "?"}`)) +
-        theme.fg(
-          "muted",
-          ` · ${details.title ?? ""} · ${failed ? "failed" : "finished"}`,
-        );
+        theme.fg("muted", ` · ${details.title ?? ""} · ${verb}`);
 
       const content =
         typeof message.content === "string" ? message.content : "";

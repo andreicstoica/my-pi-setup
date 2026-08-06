@@ -189,13 +189,15 @@ export default function (pi: ExtensionAPI) {
     name: "git_show",
     label: "Git Show",
     description:
-      "Show a commit's diff with file:line hunk headers and syntax highlighting. Prefer this over `bash git show` — the output is rendered as a real diff instead of flat text.",
+      "Show a commit's diff with file:line hunk headers and syntax highlighting. Prefer this over `bash git show` — the output is rendered as a real diff instead of flat text. For a commit that may be large, pass stat: true first and then re-call scoped to the paths you care about, instead of pulling the full diff twice.",
     promptSnippet:
       "Show a commit's diff, rendered with file:line headers and diff colouring",
     parameters: showParameters(),
     async execute(_id, params, signal, ctxUpdate, ctx) {
       void ctxUpdate;
-      const args = ["show", "--no-color", "--no-ext-diff", params.revision];
+      const args = ["show", "--no-color", "--no-ext-diff"];
+      if (params.stat) args.push("--stat");
+      args.push(params.revision);
       if (params.paths?.length) args.push("--", ...params.paths);
       const { text, truncated } = truncate(await git(args, ctx.cwd, signal));
       return diffResult(text, truncated);
@@ -247,6 +249,9 @@ export default function (pi: ExtensionAPI) {
         `--max-count=${params.limit ?? 20}`,
         "--pretty=format:%h %s",
       ];
+      if (params.all) args.push("--all");
+      if (params.since) args.push(`--since=${params.since}`);
+      if (params.author) args.push(`--author=${params.author}`);
       if (params.revision_range) args.push(params.revision_range);
       if (params.paths?.length) args.push("--", ...params.paths);
       const { text, truncated } = truncate(await git(args, ctx.cwd, signal));
@@ -322,16 +327,37 @@ function showParameters() {
         description: "Limit the output to these paths.",
       }),
     ),
+    stat: Type.Optional(
+      Type.Boolean({
+        description:
+          "Show only the file-change summary (--stat), not the diff. Cheap first look at a big commit.",
+      }),
+    ),
   });
 }
 
 function logParameters() {
   return Type.Object({
     revision_range: Type.Optional(
-      Type.String({ description: "Revision or range, e.g. 'master..HEAD'." }),
+      Type.String({
+        description:
+          "A single revision or range, e.g. 'master..HEAD'. NOT a place for flags — use the since/all/author parameters instead.",
+      }),
     ),
     limit: Type.Optional(
       Type.Number({ description: "Maximum commits to list (default 20)." }),
+    ),
+    since: Type.Optional(
+      Type.String({
+        description:
+          "Only commits after this date, passed to --since, e.g. '3 days ago' or '2026-08-01'.",
+      }),
+    ),
+    all: Type.Optional(
+      Type.Boolean({ description: "Search all branches (--all)." }),
+    ),
+    author: Type.Optional(
+      Type.String({ description: "Filter by author (--author substring)." }),
     ),
     paths: Type.Optional(
       Type.Array(Type.String(), {

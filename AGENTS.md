@@ -4,7 +4,7 @@
 
 **Next steps — action-first.** When work spans multiple steps, number them, each one bounded. End with the single concrete next action. State errors matter-of-factly: cause, then fix.
 
-Relax all of this when I ask for a real explanation, when confirming a destructive/irreversible action, or on genuine ambiguity (ask one question).
+Relax all of this when I ask for a real explanation, when confirming a destructive/irreversible action, or on genuine ambiguity (ask one question). Structure serves clarity — never the reverse.
 
 When asking questions, ask them one at a time.
 
@@ -14,15 +14,19 @@ You orchestrate. Spawn subagents for work that is self-contained — see the `su
 
 **MCP tools do not exist in pi.** Linear, the Liftoff prod MCP, Figma, and Sentry are only reachable from Claude Code. When a task needs one, spawn a `claude` subagent on `sonnet` with a prompt naming exactly the data you need and telling it to report findings back as text. Don't try to reach those services any other way.
 
+**Hard UI polish and animation problems escalate.** When visual/motion work resists two local attempts, spawn a `claude` subagent on the top model (fable, `high` effort) rather than grinding — that is my standing preference, not a last resort.
+
 ## Tools
 
 - Reading git history or changes: use `git_diff`, `git_show`, `git_log` — not `bash git …`. They render real diffs with `file:line` headers instead of flat text. `bash` is still right for git commands that *act* (commit, rebase, `gt`).
 
 ## Liftoff (`~/liftoff/*`)
 
-- `kit` is my CLI for the Liftoff worktrees — dev servers, ports, worktrees. Use it instead of raw `yarn dev`/`uvicorn`: `kit play` (start), `kit restart` (bounce a hung/edited server — don't spawn a fresh `yarn dev`), `kit links` (this worktree's ports/URLs), `kit open`/`kit focus` (open it). Each worktree has its own slot port band; the server is usually already running on it.
-- PRs: graphite (`gt`) — keep stacked/restacked on `master`, split large work into separate stacked PRs.
-- Before submitting: lint + `tsc --noEmit` + the relevant tests.
+- `kit` is my CLI for the Liftoff worktrees — dev servers, ports, worktrees. Use it instead of raw `yarn dev`/`uvicorn`: `kit play` (start), `kit restart` (bounce a hung/edited server — don't spawn a fresh `yarn dev`), `kit links` (this worktree's ports/URLs), `kit open`/`kit focus` (open it). Each worktree has its own slot port band; the server is usually already running on it. `kit wash` prompts on the tty — ask me to run it instead of fighting it with `script(1)`.
+- PRs: graphite (`gt`) — keep stacked/restacked on `master` with `gt sync`/`gt restack` (never plain `git rebase` on a tracked stack), split large work into separate stacked PRs.
+- Before submitting: lint + typecheck + the relevant tests. Frontend typecheck is `tsc -b` or `tsc -p tsconfig.app.json` — bare `tsc --noEmit` at the frontend/app root checks nothing. Backend lint is `ruff format` + `ruff check --fix` + `lint-imports`.
+- Backend pytest needs `VALKEY_SCHEME=redis` in the env or every run hangs ~60s on SSL. All worktrees share one venv (`~/.envs/py314`, Python 3.14); never `uv run` in `backend/`.
+- Styling: use the closest existing tailwind token, never magic color values.
 
 ## TypeScript
 

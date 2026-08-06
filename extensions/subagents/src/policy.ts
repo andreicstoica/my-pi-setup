@@ -169,6 +169,62 @@ export function classifyAwsInvocation(args: readonly string[]) {
 }
 
 /**
+ * Destructive shell commands no unattended child may run. A real incident
+ * motivates this: a script that drop/recreated a newline-joined DB list wiped
+ * the local `liftoff` database (2026-07-30). Database destruction, force
+ * pushes to the trunk, and rm -rf aimed at a home/root path are never part of
+ * a delegated task; a human runs those.
+ */
+export function findDestructiveCommand(command: string): string | undefined {
+  for (const segment of command.split(COMMAND_SEPARATOR)) {
+    const tokens = segment.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) continue;
+    const executable = basename(tokens[0]!);
+
+    if (executable === "dropdb") return "dropdb deletes a database";
+
+    // SQL scanning is gated on a psql invocation so prose mentioning DROP
+    // TABLE (commit messages, echo) is not a false positive.
+    if (executable === "psql") {
+      const sql = segment;
+      if (/\bdrop\s+(database|schema|table)\b/i.test(sql)) {
+        return "psql DROP DATABASE/SCHEMA/TABLE";
+      }
+      if (/\btruncate\s/i.test(sql)) return "psql TRUNCATE";
+      if (/\bdelete\s+from\b(?![^;]*\bwhere\b)/i.test(sql)) {
+        return "psql DELETE without a WHERE clause";
+      }
+    }
+
+    if (executable === "git" && tokens[1] === "push") {
+      const force = tokens.some(
+        (t) => t === "--force" || t === "-f" || /^-[a-z]*f/.test(t),
+      );
+      const trunk = tokens.some((t) =>
+        /^(master|main)$/.test(unquote(t).replace(/^.*:/, "")),
+      );
+      if (force && trunk) return "force push to master/main";
+    }
+
+    if (executable === "rm" && tokens.some((t) => /^-[a-z]*r/i.test(t))) {
+      const targets = tokens
+        .slice(1)
+        .filter((t) => !t.startsWith("-"))
+        .map(unquote);
+      if (
+        targets.some(
+          (t) =>
+            t === "/" || t === "~" || t === "$HOME" || t.startsWith("../"),
+        )
+      ) {
+        return "recursive rm aimed at root, home, or outside the working tree";
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
  * The single policy entry point. Returns a denial reason, or undefined to let
  * the call proceed untouched.
  */
@@ -196,6 +252,11 @@ export function evaluateToolUse(toolName: string, toolInput: unknown) {
     if (denial) {
       return `${denial}. Mutating aws calls are blocked for subagents — surface the command for a human to run.`;
     }
+  }
+
+  const destructive = findDestructiveCommand(command);
+  if (destructive) {
+    return `Blocked: ${destructive}. Destructive commands are never run by subagents — surface the command for a human to run.`;
   }
 
   return undefined;

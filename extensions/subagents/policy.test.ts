@@ -196,3 +196,40 @@ test("non-string Bash input is ignored rather than throwing", () => {
   assert.equal(evaluateToolUse("Bash", { command: 42 }), undefined);
   assert.equal(evaluateToolUse("Bash", null), undefined);
 });
+
+// --- destructive shell commands -------------------------------------------
+
+test("database destruction is blocked", () => {
+  assert.ok(bash("dropdb liftoff"));
+  assert.ok(bash("createdb tmp && dropdb tmp"));
+  assert.ok(bash(`psql -c "DROP DATABASE liftoff"`));
+  assert.ok(bash(`psql liftoff -c "drop table contacts"`));
+  assert.ok(bash(`psql liftoff -c "TRUNCATE contacts"`));
+  assert.ok(bash(`psql liftoff -c "DELETE FROM contacts;"`));
+});
+
+test("scoped SQL and prose mentioning DROP are allowed", () => {
+  assert.equal(
+    bash(`psql liftoff -c "DELETE FROM contacts WHERE id = 5"`),
+    undefined,
+  );
+  assert.equal(bash(`psql liftoff -c "SELECT count(*) FROM users"`), undefined);
+  assert.equal(bash(`git commit -m "drop table support"`), undefined);
+  assert.equal(bash(`echo "DROP DATABASE would be bad"`), undefined);
+});
+
+test("force pushes to trunk are blocked, feature-branch pushes allowed", () => {
+  assert.ok(bash("git push --force origin master"));
+  assert.ok(bash("git push -f origin main"));
+  assert.ok(bash("git push --force origin HEAD:master"));
+  assert.equal(bash("git push --force-with-lease origin my-feature"), undefined);
+  assert.equal(bash("git push origin master"), undefined);
+});
+
+test("recursive rm outside the working tree is blocked", () => {
+  assert.ok(bash("rm -rf /"));
+  assert.ok(bash("rm -rf ~"));
+  assert.ok(bash("rm -rf ../other-project"));
+  assert.equal(bash("rm -rf node_modules"), undefined);
+  assert.equal(bash("rm -rf dist build"), undefined);
+});
