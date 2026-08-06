@@ -65,7 +65,7 @@ export const SUBAGENT_CANCEL_PARAMETER_DESCRIPTIONS = {
 
 /** Describes nonblocking inspection of a subagent without consuming its result. */
 export const SUBAGENT_CHECK_TOOL_DESCRIPTION =
-  "Peek at a subagent's status and recent activity without blocking. Does not consume its result.";
+  "Peek at a subagent's status and recent activity without blocking. Does not consume its result. Never call this in a loop to poll for completion: results are delivered to you automatically when the subagent settles, and subagent_wait blocks until then.";
 
 /** Model-facing schema description for the subagent id to inspect. */
 export const SUBAGENT_CHECK_PARAMETER_DESCRIPTIONS = {
@@ -76,6 +76,26 @@ export const SUBAGENT_CHECK_PARAMETER_DESCRIPTIONS = {
 export const SUBAGENT_LIST_TOOL_DESCRIPTION =
   "List all subagents (running and finished) with their harness and status.";
 
+/**
+ * A child can exit "done" with nothing but a provider error as its whole
+ * output (observed: two subagents whose entire result was
+ * "API Error: 529 Overloaded"). Treat that as a failure so the parent retries
+ * instead of moving on with an empty answer. Scoped to short outputs so a real
+ * report that merely mentions an API error is never reclassified.
+ */
+export function looksLikeApiFailure(output: string) {
+  const trimmed = output.trim();
+  if (!trimmed || trimmed.length > 600) return false;
+  return (
+    /^(\[?API Error|APIError|Request failed)\b/i.test(trimmed) ||
+    /\boverloaded_error\b|\b529 Overloaded\b/i.test(trimmed)
+  );
+}
+
+/** Appended whenever a settled child's output is really a provider error. */
+export const API_FAILURE_ADVICE =
+  "The output above is a model-API failure, not a result — the task did not run to completion. Respawn the subagent (same prompt) to retry.";
+
 /** Builds the child completion/failure wrapper injected into the parent model's context. */
 export function buildSubagentResultMessage(options: {
   id: string;
@@ -84,9 +104,17 @@ export function buildSubagentResultMessage(options: {
   errorText?: string;
   output: string;
 }) {
-  const verb = options.status === "error" ? "failed" : "finished";
+  const apiFailure =
+    options.status !== "error" && looksLikeApiFailure(options.output);
+  const verb =
+    options.status === "error"
+      ? "failed"
+      : apiFailure
+        ? "failed (model API error)"
+        : "finished";
   let text = `Subagent ${options.id} "${options.title}" ${verb}.`;
   if (options.errorText) text += `\nError: ${options.errorText}`;
   text += `\n\n${options.output}`;
+  if (apiFailure) text += `\n\n${API_FAILURE_ADVICE}`;
   return text;
 }

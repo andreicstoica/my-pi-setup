@@ -103,6 +103,19 @@ export interface RgToolDetails {
 
 const EXEC_TIMEOUT_MS = 60_000;
 
+/**
+ * The dominant fd/rg failure in real sessions is a pattern meant literally
+ * (glob or code snippet) handed to the regex engine — 15% of fd calls failed
+ * this way. Both binaries report it as a parse error; the tools retry once in
+ * the mode the model evidently meant instead of burning a model turn.
+ */
+function isRegexParseError<E>(exit: Exit.Exit<unknown, E>) {
+  if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return false;
+  return /regex parse error|error parsing regex|unclosed group|repetition operator/i.test(
+    causeMessage(exit.cause),
+  );
+}
+
 function causeMessage<E>(cause: Cause.Cause<E>) {
   const [first] = Cause.prettyErrors(cause);
   return first?.message ?? Cause.pretty(cause);
@@ -216,33 +229,42 @@ export default function fileSearchTools(pi: ExtensionAPI) {
     parameters: fdParameters(),
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const exit = await Effect.runPromiseExit(
-        Effect.gen(function* () {
-          const outcome = yield* runSearch("fd", buildFdArgs(params), ctx);
-          if (outcome.noMatches) {
+      const run = (p: typeof params, note = "") =>
+        Effect.runPromiseExit(
+          Effect.gen(function* () {
+            const outcome = yield* runSearch("fd", buildFdArgs(p), ctx);
+            if (outcome.noMatches) {
+              return {
+                content: [{ type: "text", text: `${note}No files found` }],
+                details: {
+                  binarySource: outcome.binarySource,
+                  matchCount: 0,
+                  truncated: false,
+                },
+              } satisfies AgentToolResult<FdToolDetails>;
+            }
+
+            const formatted = formatCapturedOutput(outcome.output);
             return {
-              content: [{ type: "text", text: "No files found" }],
+              content: [{ type: "text", text: `${note}${formatted.text}` }],
               details: {
                 binarySource: outcome.binarySource,
-                matchCount: 0,
-                truncated: false,
+                matchCount: formatted.lineCount,
+                truncated: formatted.truncated,
+                fullOutputPath: formatted.fullOutputPath,
               },
             } satisfies AgentToolResult<FdToolDetails>;
-          }
+          }),
+          signal ? { signal } : undefined,
+        );
 
-          const formatted = formatCapturedOutput(outcome.output);
-          return {
-            content: [{ type: "text", text: formatted.text }],
-            details: {
-              binarySource: outcome.binarySource,
-              matchCount: formatted.lineCount,
-              truncated: formatted.truncated,
-              fullOutputPath: formatted.fullOutputPath,
-            },
-          } satisfies AgentToolResult<FdToolDetails>;
-        }),
-        signal ? { signal } : undefined,
-      );
+      let exit = await run(params);
+      if (params.pattern && !params.glob && isRegexParseError(exit)) {
+        exit = await run(
+          { ...params, glob: true },
+          "[pattern was not valid regex — retried as a glob]\n",
+        );
+      }
       return unwrapToolExit(exit, "fd");
     },
 
@@ -287,33 +309,42 @@ export default function fileSearchTools(pi: ExtensionAPI) {
     parameters: rgParameters(),
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const exit = await Effect.runPromiseExit(
-        Effect.gen(function* () {
-          const outcome = yield* runSearch("rg", buildRgArgs(params), ctx);
-          if (outcome.noMatches) {
+      const run = (p: typeof params, note = "") =>
+        Effect.runPromiseExit(
+          Effect.gen(function* () {
+            const outcome = yield* runSearch("rg", buildRgArgs(p), ctx);
+            if (outcome.noMatches) {
+              return {
+                content: [{ type: "text", text: `${note}No matches found` }],
+                details: {
+                  binarySource: outcome.binarySource,
+                  outputLines: 0,
+                  truncated: false,
+                },
+              } satisfies AgentToolResult<RgToolDetails>;
+            }
+
+            const formatted = formatCapturedOutput(outcome.output);
             return {
-              content: [{ type: "text", text: "No matches found" }],
+              content: [{ type: "text", text: `${note}${formatted.text}` }],
               details: {
                 binarySource: outcome.binarySource,
-                outputLines: 0,
-                truncated: false,
+                outputLines: formatted.lineCount,
+                truncated: formatted.truncated,
+                fullOutputPath: formatted.fullOutputPath,
               },
             } satisfies AgentToolResult<RgToolDetails>;
-          }
+          }),
+          signal ? { signal } : undefined,
+        );
 
-          const formatted = formatCapturedOutput(outcome.output);
-          return {
-            content: [{ type: "text", text: formatted.text }],
-            details: {
-              binarySource: outcome.binarySource,
-              outputLines: formatted.lineCount,
-              truncated: formatted.truncated,
-              fullOutputPath: formatted.fullOutputPath,
-            },
-          } satisfies AgentToolResult<RgToolDetails>;
-        }),
-        signal ? { signal } : undefined,
-      );
+      let exit = await run(params);
+      if (!params.fixed_strings && isRegexParseError(exit)) {
+        exit = await run(
+          { ...params, fixed_strings: true },
+          "[pattern was not valid regex — retried as a literal string]\n",
+        );
+      }
       return unwrapToolExit(exit, "rg");
     },
 

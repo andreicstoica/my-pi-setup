@@ -55,8 +55,10 @@ import {
 } from "./src/format.ts";
 import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
+  API_FAILURE_ADVICE,
   buildSubagentResultMessage,
   buildSubagentSpawnResult,
+  looksLikeApiFailure,
   SUBAGENT_CANCEL_PARAMETER_DESCRIPTIONS,
   SUBAGENT_CANCEL_TOOL_DESCRIPTION,
   SUBAGENT_CHECK_PARAMETER_DESCRIPTIONS,
@@ -181,6 +183,13 @@ export default function (pi: ExtensionAPI) {
   let ui: ExtensionUIContext | undefined;
   let unsubStatus: (() => void) | undefined;
   const resultDelivery = createDeferredResultDelivery<SubagentSnapshot>();
+
+  /**
+   * Consecutive subagent_check calls per still-running child. One session
+   * burned 65 checks in five minutes after an aborted wait; the counter powers
+   * an escalating "stop polling" nudge in the tool result. Reset on settle.
+   */
+  const checkCounts = new Map<string, number>();
 
   const getRuntime = () => (runtime ??= createSubagentRuntime());
 
@@ -463,7 +472,11 @@ export default function (pi: ExtensionAPI) {
             details: { pending },
           });
         }),
-        { signal, interruptMessage: "Wait aborted. Subagents keep running." },
+        {
+          signal,
+          interruptMessage:
+            "Wait aborted. Subagents keep running and their results are still delivered automatically when they settle. Do not poll with subagent_check; work on something else or call subagent_wait again when you truly need the result.",
+        },
       );
 
       // Settlement may have happened before this wait began. Remove any
@@ -478,9 +491,17 @@ export default function (pi: ExtensionAPI) {
           sections.push(`## ${id}\n\n(no longer tracked)`);
           continue;
         }
-        const verb = snap.status === "error" ? "failed" : "finished";
+        const apiFailure =
+          snap.status !== "error" && looksLikeApiFailure(snap.finalText ?? "");
+        const verb =
+          snap.status === "error"
+            ? "failed"
+            : apiFailure
+              ? "failed (model API error)"
+              : "finished";
         let section = `## ${snap.id} "${snap.title}" ${verb}`;
         if (snap.errorText) section += `\nError: ${snap.errorText}`;
+        if (apiFailure) section += `\n${API_FAILURE_ADVICE}`;
         const headerBytes = Buffer.byteLength(section, "utf8") + 2;
         const outputBudget = Math.max(
           512,
@@ -665,6 +686,17 @@ export default function (pi: ExtensionAPI) {
         if (preview.truncated) text += "\n[...]";
       } else if (snap.status === "running") {
         text += "\n\n(no text output yet)";
+      }
+
+      if (snap.status === "running") {
+        const polls = (checkCounts.get(snap.id) ?? 0) + 1;
+        checkCounts.set(snap.id, polls);
+        text +=
+          polls >= 3
+            ? `\n\n[You have checked ${snap.id} ${polls} times while it runs. STOP polling: its result is delivered to you automatically when it settles. Call subagent_wait(ids: ["${snap.id}"]) if you cannot proceed without it, otherwise do other work.]`
+            : "\n\n[Still running. Do not poll subagent_check; the result arrives automatically, or subagent_wait blocks until it does.]";
+      } else {
+        checkCounts.delete(snap.id);
       }
 
       return {

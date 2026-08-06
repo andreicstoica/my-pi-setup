@@ -14,7 +14,7 @@ export const FD_PROMPT_GUIDELINES = [
 
 export const FD_PARAMETER_DESCRIPTIONS = {
   pattern:
-    "Regex matched against file names (or a glob when glob is true). Omit to list everything under path.",
+    "Regex matched against file names, NOT a glob — '*onboard*' is invalid regex; write 'onboard' (substring match) or set glob: true. Omit to list everything under path.",
   path: "Directory to search. Defaults to the current working directory.",
   type: "Only return entries of this type: file, directory, or symlink.",
   extension: "Only return files with this extension, e.g. 'ts' or 'md'.",
@@ -38,8 +38,9 @@ export const RG_PROMPT_GUIDELINES = [
 ];
 
 export const RG_PARAMETER_DESCRIPTIONS = {
-  pattern: "Regex to search for (literal text when fixed_strings is true).",
-  path: "File or directory to search. Defaults to the current working directory.",
+  pattern:
+    "Regex to search for (literal text when fixed_strings is true). Parens/brackets in code snippets like 'create_default(' are regex metacharacters — set fixed_strings for literal code.",
+  path: "Single file or directory to search (not a space-separated list — call once per root, or use a common parent). Defaults to the current working directory.",
   glob: "Only search files matching this glob, e.g. '*.ts' or 'src/**'.",
   file_type:
     "Only search files of this ripgrep type, e.g. 'ts', 'js', 'py', 'rust'.",
