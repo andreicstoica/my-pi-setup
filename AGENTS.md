@@ -12,7 +12,7 @@ When asking questions, ask them one at a time.
 
 You orchestrate. Spawn subagents for work that is self-contained — see the `subagents` skill for harnesses, models, and effort levels.
 
-**MCP tools do not exist in pi.** Linear, the Liftoff prod MCP, Figma, and Sentry are only reachable from Claude Code. When a task needs one, spawn a `claude` subagent on `sonnet` with a prompt naming exactly the data you need and telling it to report findings back as text. Don't try to reach those services any other way.
+**MCP tools do not exist in pi.** Linear, the Liftoff prod MCP, Figma, and Sentry are only reachable through Claude Code. For simple lookups use the bridge tools (`linear`, `sentry`, `figma`, `liftoff_sql`) — each runs a scoped headless claude query and returns text. Spawn a full `claude` subagent on `sonnet` only for multi-step or cross-service MCP work. Don't try to reach those services any other way. (`liftoff_sql` needs the VPN; `sentry` needs its connector re-authenticated in Claude Code from time to time.)
 
 **Hard UI polish and animation problems escalate.** When visual/motion work resists two local attempts, spawn a `claude` subagent on the top model (fable, `high` effort) rather than grinding — that is my standing preference, not a last resort.
 

@@ -56,8 +56,9 @@ function executable(file: string) {
  * Resolve the Claude Code CLI once from PATH. The SDK can also run without
  * this (it bundles a CLI), but pointing it at the user's installed binary
  * keeps versions, settings, and login state consistent with their terminal.
+ * Exported for the mcp-bridge extension, which shares the same requirement.
  */
-function resolveClaudeBinary() {
+export function resolveClaudeBinary() {
   if (cachedClaudeBinary !== undefined) return cachedClaudeBinary ?? undefined;
   const names =
     process.platform === "win32"
