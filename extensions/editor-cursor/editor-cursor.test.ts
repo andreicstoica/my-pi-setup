@@ -96,12 +96,17 @@ test("the guard is the setting, not the marker", async () => {
   // editor.js:419 emits CURSOR_MARKER whenever the component is FOCUSED,
   // regardless of showHardwareCursor. Guarding on the marker would strip pi's
   // drawn cursor with the setting off, leaving no visible cursor at all.
+  // pi-tui 0.84 made TUI a type-only interface; TuiAltScreen/TuiMainScreen are
+  // the concrete classes every session runs on, so the guard must exist there.
   const tui = await import("@earendil-works/pi-tui");
-  assert.equal(
-    typeof (
-      tui.TUI?.prototype as { getShowHardwareCursor?: unknown } | undefined
-    )?.getShowHardwareCursor,
-    "function",
-    "TUI must expose getShowHardwareCursor for the guard",
-  );
+  for (const name of ["TuiAltScreen", "TuiMainScreen"] as const) {
+    const cls = tui[name] as
+      | { prototype?: { getShowHardwareCursor?: unknown } }
+      | undefined;
+    assert.equal(
+      typeof cls?.prototype?.getShowHardwareCursor,
+      "function",
+      `${name} must expose getShowHardwareCursor for the guard`,
+    );
+  }
 });
