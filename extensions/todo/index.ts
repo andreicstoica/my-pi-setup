@@ -17,8 +17,11 @@
  * ones on the current path: forking or navigating the session tree rewinds the
  * checklist to match, with no extra bookkeeping.
  *
- * UI: a one-line widget above the editor showing the active step, and `/todos`
- * to drop a rendered snapshot into the scrollback.
+ * UI: the plan lives in a widget pinned above the editor, so it stays on screen
+ * instead of scrolling away with the tool calls that produced it. It removes
+ * itself once nothing is open. `/todos` collapses it to a single line and back.
+ * The tool's own transcript entry stays one line, since the widget is the copy
+ * worth reading.
  */
 
 import type {
@@ -31,6 +34,7 @@ import { Type } from "typebox";
 import {
   applyMutation,
   emptyTodoState,
+  openItems,
   replay,
   type TodoMutation,
   type TodoState,
@@ -39,14 +43,13 @@ import {
   renderCompactionHint,
   renderContextBlock,
   renderToolResult,
-  renderWidgetLine,
   summarize,
   TODO_PARAMETER_DESCRIPTIONS,
   TODO_PROMPT_GUIDELINES,
   TODO_PROMPT_SNIPPET,
   TODO_TOOL_DESCRIPTION,
 } from "./src/prompt.ts";
-import { renderSnapshot } from "./src/view.ts";
+import { renderPanel, renderSnapshot } from "./src/view.ts";
 
 const MUTATION_ENTRY = "todo/mutation";
 const SNAPSHOT_ENTRY = "todo/snapshot";
@@ -59,9 +62,17 @@ const STATUS = Type.Union([
   Type.Literal("cancelled"),
 ]);
 
+/** Details attached to the tool result, read back by `renderResult`. */
+type TodoDetails = {
+  createdIds: string[];
+  warnings: string[];
+  summary: string;
+};
+
 export default function (pi: ExtensionAPI) {
   let state: TodoState = emptyTodoState();
   let ui: ExtensionUIContext | undefined;
+  let collapsed = false;
 
   /**
    * Rebuild from the mutations on the current branch. Called whenever the
@@ -83,8 +94,16 @@ export default function (pi: ExtensionAPI) {
 
   const refreshUI = () => {
     if (!ui) return;
-    const line = renderWidgetLine(state);
-    ui.setWidget(WIDGET_KEY, line ? [line] : undefined);
+
+    // The component factory overload is what gets us the theme; the string[]
+    // one does not. Passing a fresh factory rebuilds the widget from `state`.
+    ui.setWidget(
+      WIDGET_KEY,
+      openItems(state).length > 0
+        ? (_tui, theme) => new Text(renderPanel(state, theme, collapsed) ?? "", 1, 0)
+        : undefined,
+      { placement: "aboveEditor" },
+    );
 
     // The spinner narrates the active step, which is the whole reason
     // activeForm exists.
@@ -217,15 +236,30 @@ export default function (pi: ExtensionAPI) {
         },
       };
     },
+
+    // The pinned widget is the copy worth reading, so the transcript entry
+    // stays a single line instead of replaying the whole list on every call.
+    renderResult(result, _options, theme) {
+      const details = result.details as TodoDetails | undefined;
+      const parts = [theme.fg("muted", details?.summary ?? "updated")];
+      for (const warning of details?.warnings ?? [])
+        parts.push(theme.fg("warning", `warning: ${warning}`));
+      return new Text(parts.join(" · "), 1, 0);
+    },
   });
 
   // --- Commands and rendering --------------------------------------------
 
+  // The plan is already pinned above the editor, so this collapses it to one
+  // line rather than appending another copy to the scrollback.
   pi.registerCommand("todos", {
-    description: "Show the current plan",
+    description: "Collapse or expand the pinned plan",
     handler: async (_args, ctx) => {
       resync(ctx);
-      pi.appendEntry<TodoState>(SNAPSHOT_ENTRY, state);
+      collapsed = !collapsed;
+      refreshUI();
+      if (openItems(state).length === 0)
+        ctx.ui.notify("No open todos.", "info");
     },
   });
 
@@ -236,6 +270,8 @@ export default function (pi: ExtensionAPI) {
     invalidate: () => {},
   }));
 
+  // Snapshots are no longer appended — `/todos` toggles the widget instead —
+  // but sessions recorded before that change still carry these entries.
   pi.registerEntryRenderer<TodoState>(
     SNAPSHOT_ENTRY,
     (entry, _options, theme) =>

@@ -319,12 +319,11 @@ export default function uiCustomization(pi: ExtensionAPI) {
           }
           const usageLine = usageParts.join(theme.fg("dim", " · "));
 
+          // The branch is what identifies the work; the worktree directory it
+          // lives in is context, so it drops to the second row.
+          const worktree = formatWorktree(ctx.cwd);
           const fileLabel = gitInfo.changedFiles === 1 ? "file" : "files";
-          let location = theme.fg("text", formatWorktree(ctx.cwd));
-          if (gitInfo.branch) {
-            location +=
-              theme.fg("dim", "@") + theme.fg("muted", gitInfo.branch);
-          }
+          let location = theme.fg("text", gitInfo.branch || worktree);
           if (gitInfo.changedFiles > 0) {
             location += theme.fg(
               "dim",
@@ -338,6 +337,8 @@ export default function uiCustomization(pi: ExtensionAPI) {
               : prLabel;
             location += theme.fg("dim", " · ") + linkedPr;
           }
+          // Only worth repeating when row 1 showed the branch instead.
+          const worktreeLine = gitInfo.branch ? theme.fg("dim", worktree) : "";
 
           // Row 2 — the live session numbers.
           const contextPercent =
@@ -370,7 +371,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
 
           const lines = [
             columns(usageLine, location, width),
-            columns(theme.fg("muted", sessionLine), "", width),
+            columns(theme.fg("muted", sessionLine), worktreeLine, width),
           ];
 
           // Extension statuses render after the two dashboard lines, one per row.
