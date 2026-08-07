@@ -213,8 +213,7 @@ export function findDestructiveCommand(command: string): string | undefined {
         .map(unquote);
       if (
         targets.some(
-          (t) =>
-            t === "/" || t === "~" || t === "$HOME" || t.startsWith("../"),
+          (t) => t === "/" || t === "~" || t === "$HOME" || t.startsWith("../"),
         )
       ) {
         return "recursive rm aimed at root, home, or outside the working tree";

@@ -222,7 +222,10 @@ test("force pushes to trunk are blocked, feature-branch pushes allowed", () => {
   assert.ok(bash("git push --force origin master"));
   assert.ok(bash("git push -f origin main"));
   assert.ok(bash("git push --force origin HEAD:master"));
-  assert.equal(bash("git push --force-with-lease origin my-feature"), undefined);
+  assert.equal(
+    bash("git push --force-with-lease origin my-feature"),
+    undefined,
+  );
   assert.equal(bash("git push origin master"), undefined);
 });
 

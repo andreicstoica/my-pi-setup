@@ -1,7 +1,12 @@
 /** Terminal rendering for the pinned widget and the `/todos` snapshot entry. */
 
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { openItems, type Todo, type TodoState, type TodoStatus } from "./domain.ts";
+import {
+  openItems,
+  type Todo,
+  type TodoState,
+  type TodoStatus,
+} from "./domain.ts";
 import { renderWidgetLine, summarize } from "./prompt.ts";
 
 /**

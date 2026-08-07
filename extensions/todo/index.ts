@@ -100,7 +100,8 @@ export default function (pi: ExtensionAPI) {
     ui.setWidget(
       WIDGET_KEY,
       openItems(state).length > 0
-        ? (_tui, theme) => new Text(renderPanel(state, theme, collapsed) ?? "", 1, 0)
+        ? (_tui, theme) =>
+            new Text(renderPanel(state, theme, collapsed) ?? "", 1, 0)
         : undefined,
       { placement: "aboveEditor" },
     );

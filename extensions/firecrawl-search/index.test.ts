@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Effect } from "effect";
-import { crawlEffect, searchGroups, type CrawlClient } from "./index.ts";
+import {
+  crawlEffect,
+  deferFollowupTools,
+  searchGroups,
+  type CrawlClient,
+} from "./index.ts";
+
+test("defers Firecrawl follow-up tools until search runs", () => {
+  assert.deepEqual(
+    deferFollowupTools(["read", "search", "crawl", "scrape", "todo"]),
+    ["read", "search", "todo"],
+  );
+});
 
 test("cancels the remote crawl when polling is interrupted", async () => {
   let pollingStarted!: () => void;

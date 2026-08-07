@@ -22,12 +22,15 @@ const STATUS_STDERR_MAX_LINES = 200;
 const RESULT_STDOUT_MAX_LINES = 40;
 const RESULT_STDERR_MAX_LINES = 20;
 
+/**
+ * Standing cost on every request, so it states only what changes the call: the
+ * platform shell and the no-stdin failure mode are already in the `command`
+ * parameter description and a guideline bullet, and session scoping, spill
+ * files, and /ps live in the `background-terminals` skill (loaded on demand).
+ */
 export const BG_START_TOOL_DESCRIPTION =
-  "Start a long-running shell command as a background terminal (executed via the platform shell — sh -c on POSIX, cmd.exe /d /s /c on Windows). " +
-  "Fire-and-forget: this returns immediately with an id, and you get a message with the final output when the process exits. " +
-  "The process receives NO stdin (immediate EOF) and there is no way to send input later — interactive commands will not work; use bg_kill to stop a stuck one. " +
-  `Terminals are session-scoped: they are killed when the session ends or reloads. Output shown to you is tail-truncated (stdout ${formatSize(STATUS_STDOUT_MAX)}, stderr ${formatSize(STATUS_STDERR_MAX)}); the full logs are captured to files and in the /ps viewer. ` +
-  `Max ${MAX_RUNNING} background terminals can run at once.`;
+  "Start a long-running shell command as a background terminal. Fire-and-forget: returns an id immediately, and you get a message with the final output when the process exits. No stdin — interactive commands will not work; use bg_kill to stop a stuck one. " +
+  `Output shown to you is tail-truncated (stdout ${formatSize(STATUS_STDOUT_MAX)}, stderr ${formatSize(STATUS_STDERR_MAX)}); full logs are in /ps. Max ${MAX_RUNNING} at once.`;
 
 export const BG_START_PROMPT_SNIPPET =
   "Run a long-lived shell command in the background (dev servers, builds, watchers); output is captured and you're notified on exit";

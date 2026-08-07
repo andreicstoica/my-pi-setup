@@ -101,8 +101,7 @@ test("the guard is the setting, not the marker", async () => {
   const tui = await import("@earendil-works/pi-tui");
   for (const name of ["TuiAltScreen", "TuiMainScreen"] as const) {
     const cls = tui[name] as
-      | { prototype?: { getShowHardwareCursor?: unknown } }
-      | undefined;
+      { prototype?: { getShowHardwareCursor?: unknown } } | undefined;
     assert.equal(
       typeof cls?.prototype?.getShowHardwareCursor,
       "function",

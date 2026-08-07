@@ -25,17 +25,6 @@ export const SEARCH_PARAMETER_DESCRIPTIONS = {
 export const CRAWL_TOOL_DESCRIPTION =
   "Crawl multiple pages of a website with Firecrawl and return markdown documents. Defaults to 20 pages and never accepts a limit above 100. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.";
 
-/** Adds Firecrawl's multi-page crawl capability to the model's tool prompt. */
-export const CRAWL_PROMPT_SNIPPET =
-  "Crawl multiple pages of a website with Firecrawl.";
-
-/** Guides the model to use focused crawl limits and prefer scrape for one URL. */
-export const CRAWL_PROMPT_GUIDELINES = [
-  "Use crawl when the user needs content from multiple related pages on one website.",
-  "Keep crawl limits as low as practical because each crawled page consumes Firecrawl credits.",
-  "Use scrape instead of crawl when only one known URL is needed.",
-];
-
 /** Model-facing schema descriptions for Firecrawl crawl parameters. */
 export const CRAWL_PARAMETER_DESCRIPTIONS = {
   url: "The starting URL to crawl.",
@@ -52,17 +41,6 @@ export const CRAWL_PARAMETER_DESCRIPTIONS = {
 /** Describes single-page Firecrawl scraping and its model-context output limits. */
 export const SCRAPE_TOOL_DESCRIPTION =
   "Scrape one page with Firecrawl and return markdown. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.";
-
-/** Adds Firecrawl's readable single-page fetch capability to the model's tool prompt. */
-export const SCRAPE_PROMPT_SNIPPET =
-  "Fetch one URL as readable markdown with Firecrawl.";
-
-/** Guides the model to use scrape for one known page and crawl for multiple pages. */
-export const SCRAPE_PROMPT_GUIDELINES = [
-  "Use scrape when you need the full readable markdown content of one known URL.",
-  "Prefer scrape over bash or raw HTTP fetching for web pages because scrape returns cleaned content.",
-  "Use crawl instead when content is needed from multiple pages on the same website.",
-];
 
 /** Model-facing schema descriptions for Firecrawl scrape parameters. */
 export const SCRAPE_PARAMETER_DESCRIPTIONS = {

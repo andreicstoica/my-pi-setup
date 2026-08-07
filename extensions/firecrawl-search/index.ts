@@ -19,12 +19,8 @@ import { Firecrawl, type CrawlJob, type CrawlOptions } from "firecrawl";
 import { Type } from "typebox";
 import {
   CRAWL_PARAMETER_DESCRIPTIONS,
-  CRAWL_PROMPT_GUIDELINES,
-  CRAWL_PROMPT_SNIPPET,
   CRAWL_TOOL_DESCRIPTION,
   SCRAPE_PARAMETER_DESCRIPTIONS,
-  SCRAPE_PROMPT_GUIDELINES,
-  SCRAPE_PROMPT_SNIPPET,
   SCRAPE_TOOL_DESCRIPTION,
   SEARCH_PARAMETER_DESCRIPTIONS,
   SEARCH_PROMPT_GUIDELINES,
@@ -247,6 +243,18 @@ interface SearchRow {
 }
 
 const SEARCH_COLLAPSED_ROWS = 5;
+export const DEFERRED_FIRECRAWL_TOOLS = ["crawl", "scrape"] as const;
+const deferredFirecrawlToolSet = new Set<string>(DEFERRED_FIRECRAWL_TOOLS);
+
+export function deferFollowupTools(activeTools: readonly string[]) {
+  return activeTools.filter((name) => !deferredFirecrawlToolSet.has(name));
+}
+
+function activateFollowupTools(pi: ExtensionAPI) {
+  pi.setActiveTools([
+    ...new Set([...pi.getActiveTools(), ...DEFERRED_FIRECRAWL_TOOLS]),
+  ]);
+}
 
 function hostOf(url: string | undefined) {
   if (!url) return "";
@@ -334,6 +342,14 @@ function renderSearchRow(
 }
 
 export default function firecrawlTools(pi: ExtensionAPI) {
+  // Search is the common entry point. Load the expensive, less common
+  // follow-up tools only after the model uses search.
+  pi.on("session_start", () => {
+    if (pi.getActiveTools().includes("search")) {
+      pi.setActiveTools(deferFollowupTools(pi.getActiveTools()));
+    }
+  });
+
   pi.registerTool({
     name: "search",
     label: "Search Web",
@@ -358,8 +374,9 @@ export default function firecrawlTools(pi: ExtensionAPI) {
         }),
       ),
     }),
-    execute: (_toolCallId, params, signal, onUpdate) =>
-      runFirecrawl(
+    execute: (_toolCallId, params, signal, onUpdate) => {
+      activateFollowupTools(pi);
+      return runFirecrawl(
         "search",
         `Searching Firecrawl for: ${params.query}`,
         35_000,
@@ -376,7 +393,8 @@ export default function firecrawlTools(pi: ExtensionAPI) {
               timeout: 30_000,
             }),
           ).pipe(Effect.map((result) => ({ details: result, output: result }))),
-      ),
+      );
+    },
 
     renderCall(args, theme) {
       let text = theme.fg("toolTitle", theme.bold("search "));
@@ -424,8 +442,6 @@ export default function firecrawlTools(pi: ExtensionAPI) {
     name: "crawl",
     label: "Crawl Website",
     description: CRAWL_TOOL_DESCRIPTION,
-    promptSnippet: CRAWL_PROMPT_SNIPPET,
-    promptGuidelines: CRAWL_PROMPT_GUIDELINES,
     parameters: Type.Object({
       url: Type.String({ description: CRAWL_PARAMETER_DESCRIPTIONS.url }),
       limit: Type.Optional(
@@ -505,8 +521,6 @@ export default function firecrawlTools(pi: ExtensionAPI) {
     name: "scrape",
     label: "Scrape Page",
     description: SCRAPE_TOOL_DESCRIPTION,
-    promptSnippet: SCRAPE_PROMPT_SNIPPET,
-    promptGuidelines: SCRAPE_PROMPT_GUIDELINES,
     parameters: Type.Object({
       url: Type.String({ description: SCRAPE_PARAMETER_DESCRIPTIONS.url }),
       onlyMainContent: Type.Optional(

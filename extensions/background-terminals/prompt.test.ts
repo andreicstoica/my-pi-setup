@@ -9,14 +9,20 @@ import {
   buildTerminalResultMessage,
 } from "./src/prompt.ts";
 
-test("start descriptions identify the platform-specific shell contract", () => {
-  assert.match(BG_START_TOOL_DESCRIPTION, /sh -c on POSIX/);
-  assert.match(BG_START_TOOL_DESCRIPTION, /cmd\.exe \/d \/s \/c on Windows/);
+// The shell contract is stated once, on the `command` parameter. It used to be
+// in the tool description too; that duplicate was dropped because the tool
+// description is standing cost on every request while the parameter text is
+// what the model reads when it actually writes a command.
+test("the command parameter identifies the platform-specific shell contract", () => {
   assert.match(BG_START_PARAMETER_DESCRIPTIONS.command, /sh -c on POSIX/);
   assert.match(
     BG_START_PARAMETER_DESCRIPTIONS.command,
     /cmd\.exe \/d \/s \/c on Windows/,
   );
+});
+
+test("the start description keeps the no-stdin failure mode", () => {
+  assert.match(BG_START_TOOL_DESCRIPTION, /No stdin/);
 });
 
 function view(overrides: Partial<OutputView> = {}): OutputView {

@@ -3,8 +3,12 @@
  * system prompt picks up, and the `<todos>` block re-pinned into context on
  * every request.
  *
- * The plan-quality examples are lifted from the Codex CLI's `update_plan`
- * prompt, which is well tuned and worth not reinventing.
+ * Everything here is standing cost — the description sits in the tool schema on
+ * every request of every session. The plan-quality rule was four worked
+ * good/bad plans lifted from the Codex CLI's `update_plan` prompt (~700 chars);
+ * it is now one line with one contrasting example, because the operative rules
+ * (one in_progress, complete as you go, do not restate the list) live in
+ * TODO_PROMPT_GUIDELINES and the `<todos>` block, not in the examples.
  */
 
 import {
@@ -17,50 +21,20 @@ import {
 
 export const TODO_TOOL_DESCRIPTION = `Track the plan for multi-step work as a live checklist the user can see.
 
-Call this when work takes more than a couple of steps, when the user hands you
-several things at once, or when you discover follow-up work mid-task. Skip it
-for single-step or purely conversational requests — a checklist for trivial
-work is noise.
+Call this for work spanning more than a couple of steps, several things handed
+over at once, or follow-up work discovered mid-task. Skip it for single-step or
+conversational requests.
 
-One call can create and update in the same request. Ids are assigned on create
-and returned to you; use them in \`update\`.
+One call can create and update together. Ids are assigned on create; use them
+in \`update\`. Statuses: pending, in_progress, completed, cancelled.
 
-Statuses: pending, in_progress, completed, cancelled.
+Keep exactly one item in_progress. Mark it in_progress before starting and
+completed the moment it is genuinely done, never batched at the end. On a
+blocker, leave the item in_progress and create a new item for the blocker. When
+the plan itself changes, update it first and pass \`explanation\`.
 
-Keep exactly one item in_progress at a time. Mark an item in_progress before
-you start it, and completed the moment it is genuinely done — not in a batch at
-the end. If understanding changes (steps split, merge, reorder, get dropped),
-update the plan first and pass \`explanation\` saying why.
-
-Only mark completed when it is actually finished. If you hit a blocker, leave it
-in_progress and create a new item for the blocker.
-
-Steps should be short — a single line, roughly 5-9 words, phrased so it is
-obvious when it is done.
-
-Good plans:
-  1. Add CLI entry with file args
-  2. Parse Markdown via CommonMark library
-  3. Apply semantic HTML template
-  4. Handle code blocks, images, links
-  5. Add error handling for invalid files
-
-  1. Define CSS variables for colors
-  2. Add toggle with localStorage state
-  3. Refactor components to use variables
-  4. Verify all views for readability
-
-Bad plans (too vague, no verifiable finish line):
-  1. Create CLI tool
-  2. Add Markdown parser
-  3. Convert to HTML
-
-  1. Add dark mode toggle
-  2. Save preference
-  3. Make styles look good
-
-Do not restate the checklist in your reply — the user already sees it rendered.
-Summarize what changed and what is next instead.`;
+Each step is one line of roughly 5-9 words, naming a verifiable finish line
+("Parse Markdown via CommonMark library", not "Add Markdown parser").`;
 
 export const TODO_PROMPT_SNIPPET =
   "todo: track and update the visible plan for multi-step work";
