@@ -1,52 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Effect } from "effect";
-import {
-  crawlEffect,
-  deferFollowupTools,
-  searchGroups,
-  type CrawlClient,
-} from "./index.ts";
-
-test("defers Firecrawl follow-up tools until search runs", () => {
-  assert.deepEqual(
-    deferFollowupTools(["read", "search", "crawl", "scrape", "todo"]),
-    ["read", "search", "todo"],
-  );
-});
-
-test("cancels the remote crawl when polling is interrupted", async () => {
-  let pollingStarted!: () => void;
-  const startedPolling = new Promise<void>((resolve) => {
-    pollingStarted = resolve;
-  });
-  const cancelledJobs: string[] = [];
-
-  const client: CrawlClient = {
-    startCrawl: async (url) => ({ id: "crawl-123", url }),
-    getCrawlStatus: async () => {
-      pollingStarted();
-      return new Promise(() => undefined);
-    },
-    cancelCrawl: async (jobId) => {
-      cancelledJobs.push(jobId);
-      return true;
-    },
-  };
-
-  const controller = new AbortController();
-  const running = Effect.runPromise(
-    crawlEffect(client, "https://example.com", { limit: 1 }),
-    { signal: controller.signal },
-  );
-  const interrupted = assert.rejects(running);
-
-  await startedPolling;
-  controller.abort();
-  await interrupted;
-
-  assert.deepEqual(cancelledJobs, ["crawl-123"]);
-});
+import { searchGroups } from "./index.ts";
 
 test("search groups normalize bare results and scraped documents", () => {
   const groups = searchGroups({
@@ -80,4 +34,9 @@ test("search groups normalize bare results and scraped documents", () => {
   assert.equal(scraped?.title, "Doc");
   assert.match(scraped?.extra ?? "", /scraped$/);
   assert.equal(groups[1]?.rows[0]?.extra, "2026-07-01");
+});
+
+test("an empty source is dropped rather than rendering a headed empty group", () => {
+  assert.deepEqual(searchGroups({ web: [], news: [], images: [] }), []);
+  assert.deepEqual(searchGroups(undefined), []);
 });

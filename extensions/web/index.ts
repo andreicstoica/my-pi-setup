@@ -15,13 +15,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Cause, Data, Effect, Exit } from "effect";
-import { Firecrawl, type CrawlJob, type CrawlOptions } from "firecrawl";
+import { Firecrawl } from "firecrawl";
 import { Type } from "typebox";
 import {
-  CRAWL_PARAMETER_DESCRIPTIONS,
-  CRAWL_TOOL_DESCRIPTION,
-  SCRAPE_PARAMETER_DESCRIPTIONS,
-  SCRAPE_TOOL_DESCRIPTION,
+  FETCH_PARAMETER_DESCRIPTIONS,
+  FETCH_TOOL_DESCRIPTION,
   SEARCH_PARAMETER_DESCRIPTIONS,
   SEARCH_PROMPT_GUIDELINES,
   SEARCH_PROMPT_SNIPPET,
@@ -131,47 +129,6 @@ function formatOutput(value: unknown, operation: string) {
   });
 }
 
-export type CrawlClient = Pick<
-  Firecrawl,
-  "startCrawl" | "getCrawlStatus" | "cancelCrawl"
->;
-
-function pollCrawl(
-  client: CrawlClient,
-  jobId: string,
-): Effect.Effect<CrawlJob, FirecrawlError> {
-  return firecrawlRequest(() => client.getCrawlStatus(jobId)).pipe(
-    Effect.flatMap((job) =>
-      job.status === "scraping"
-        ? Effect.sleep("2 seconds").pipe(
-            Effect.flatMap(() =>
-              Effect.suspend(() => pollCrawl(client, jobId)),
-            ),
-          )
-        : Effect.succeed(job),
-    ),
-  );
-}
-
-/** Brackets the remote job so every non-successful exit attempts cancellation. */
-export function crawlEffect(
-  client: CrawlClient,
-  url: string,
-  options: CrawlOptions,
-) {
-  return Effect.acquireUseRelease(
-    firecrawlRequest(() => client.startCrawl(url, options)),
-    (job) => pollCrawl(client, job.id),
-    (job, exit) =>
-      Exit.isSuccess(exit)
-        ? Effect.void
-        : firecrawlRequest(() => client.cancelCrawl(job.id)).pipe(
-            Effect.timeout("10 seconds"),
-            Effect.ignore,
-          ),
-  );
-}
-
 function operationError(operation: string, error: unknown) {
   if (error instanceof MissingApiKeyError) return new Error(error.message);
 
@@ -243,18 +200,6 @@ interface SearchRow {
 }
 
 const SEARCH_COLLAPSED_ROWS = 5;
-export const DEFERRED_FIRECRAWL_TOOLS = ["crawl", "scrape"] as const;
-const deferredFirecrawlToolSet = new Set<string>(DEFERRED_FIRECRAWL_TOOLS);
-
-export function deferFollowupTools(activeTools: readonly string[]) {
-  return activeTools.filter((name) => !deferredFirecrawlToolSet.has(name));
-}
-
-function activateFollowupTools(pi: ExtensionAPI) {
-  pi.setActiveTools([
-    ...new Set([...pi.getActiveTools(), ...DEFERRED_FIRECRAWL_TOOLS]),
-  ]);
-}
 
 function hostOf(url: string | undefined) {
   if (!url) return "";
@@ -341,17 +286,15 @@ function renderSearchRow(
   return text;
 }
 
-export default function firecrawlTools(pi: ExtensionAPI) {
-  // Search is the common entry point. Load the expensive, less common
-  // follow-up tools only after the model uses search.
-  pi.on("session_start", () => {
-    if (pi.getActiveTools().includes("search")) {
-      pi.setActiveTools(deferFollowupTools(pi.getActiveTools()));
-    }
-  });
-
+/**
+ * Both tools are active from session start. They used to be gated — only
+ * `search` loaded, with `scrape` and `crawl` unlocked by a first search — which
+ * cost a pasted URL an entirely pointless search before it could be read. With
+ * `crawl` gone the gate was hiding one cheap tool, so it earns nothing.
+ */
+export default function webTools(pi: ExtensionAPI) {
   pi.registerTool({
-    name: "search",
+    name: "web_search",
     label: "Search Web",
     description: SEARCH_TOOL_DESCRIPTION,
     promptSnippet: SEARCH_PROMPT_SNIPPET,
@@ -374,11 +317,10 @@ export default function firecrawlTools(pi: ExtensionAPI) {
         }),
       ),
     }),
-    execute: (_toolCallId, params, signal, onUpdate) => {
-      activateFollowupTools(pi);
-      return runFirecrawl(
-        "search",
-        `Searching Firecrawl for: ${params.query}`,
+    execute: (_toolCallId, params, signal, onUpdate) =>
+      runFirecrawl(
+        "web_search",
+        `Searching the web for: ${params.query}`,
         35_000,
         signal,
         onUpdate,
@@ -393,11 +335,10 @@ export default function firecrawlTools(pi: ExtensionAPI) {
               timeout: 30_000,
             }),
           ).pipe(Effect.map((result) => ({ details: result, output: result }))),
-      );
-    },
+      ),
 
     renderCall(args, theme) {
-      let text = theme.fg("toolTitle", theme.bold("search "));
+      let text = theme.fg("toolTitle", theme.bold("web_search "));
       text += theme.fg("accent", args.query ? `"${args.query}"` : "…");
       const flags = [
         args.source && args.source !== "web" ? args.source : undefined,
@@ -439,119 +380,40 @@ export default function firecrawlTools(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "crawl",
-    label: "Crawl Website",
-    description: CRAWL_TOOL_DESCRIPTION,
+    name: "web_fetch",
+    label: "Fetch Page",
+    description: FETCH_TOOL_DESCRIPTION,
     parameters: Type.Object({
-      url: Type.String({ description: CRAWL_PARAMETER_DESCRIPTIONS.url }),
-      limit: Type.Optional(
-        Type.Number({
-          description: CRAWL_PARAMETER_DESCRIPTIONS.limit,
-          minimum: 1,
-          maximum: 100,
-        }),
-      ),
-      maxDiscoveryDepth: Type.Optional(
-        Type.Number({
-          description: CRAWL_PARAMETER_DESCRIPTIONS.maxDiscoveryDepth,
-          minimum: 0,
-        }),
-      ),
-      includePaths: Type.Optional(
-        Type.Array(Type.String(), {
-          description: CRAWL_PARAMETER_DESCRIPTIONS.includePaths,
-        }),
-      ),
-      excludePaths: Type.Optional(
-        Type.Array(Type.String(), {
-          description: CRAWL_PARAMETER_DESCRIPTIONS.excludePaths,
-        }),
-      ),
-      crawlEntireDomain: Type.Optional(
-        Type.Boolean({
-          description: CRAWL_PARAMETER_DESCRIPTIONS.crawlEntireDomain,
-        }),
-      ),
-      allowSubdomains: Type.Optional(
-        Type.Boolean({
-          description: CRAWL_PARAMETER_DESCRIPTIONS.allowSubdomains,
-        }),
-      ),
-      sitemap: Type.Optional(StringEnum(["include", "skip", "only"] as const)),
+      url: Type.String({ description: FETCH_PARAMETER_DESCRIPTIONS.url }),
       onlyMainContent: Type.Optional(
         Type.Boolean({
-          description: CRAWL_PARAMETER_DESCRIPTIONS.onlyMainContent,
-        }),
-      ),
-      timeout: Type.Optional(
-        Type.Number({
-          description: CRAWL_PARAMETER_DESCRIPTIONS.timeout,
-          minimum: 1,
-          maximum: 600,
-        }),
-      ),
-    }),
-    execute: (_toolCallId, params, signal, onUpdate) =>
-      runFirecrawl(
-        "crawl",
-        `Crawling up to ${params.limit ?? 20} pages from: ${params.url}`,
-        ((params.timeout ?? 120) + 5) * 1_000,
-        signal,
-        onUpdate,
-        (client) =>
-          crawlEffect(client, params.url, {
-            limit: params.limit ?? 20,
-            maxDiscoveryDepth: params.maxDiscoveryDepth,
-            includePaths: params.includePaths,
-            excludePaths: params.excludePaths,
-            crawlEntireDomain: params.crawlEntireDomain,
-            allowSubdomains: params.allowSubdomains,
-            sitemap: params.sitemap,
-            scrapeOptions: {
-              formats: ["markdown"],
-              onlyMainContent: params.onlyMainContent ?? true,
-            },
-          }).pipe(
-            Effect.map((result) => ({ details: result, output: result })),
-          ),
-      ),
-  });
-
-  pi.registerTool({
-    name: "scrape",
-    label: "Scrape Page",
-    description: SCRAPE_TOOL_DESCRIPTION,
-    parameters: Type.Object({
-      url: Type.String({ description: SCRAPE_PARAMETER_DESCRIPTIONS.url }),
-      onlyMainContent: Type.Optional(
-        Type.Boolean({
-          description: SCRAPE_PARAMETER_DESCRIPTIONS.onlyMainContent,
+          description: FETCH_PARAMETER_DESCRIPTIONS.onlyMainContent,
         }),
       ),
       waitFor: Type.Optional(
         Type.Number({
-          description: SCRAPE_PARAMETER_DESCRIPTIONS.waitFor,
+          description: FETCH_PARAMETER_DESCRIPTIONS.waitFor,
           minimum: 0,
           maximum: 60_000,
         }),
       ),
       timeout: Type.Optional(
         Type.Number({
-          description: SCRAPE_PARAMETER_DESCRIPTIONS.timeout,
+          description: FETCH_PARAMETER_DESCRIPTIONS.timeout,
           minimum: 1,
           maximum: 120_000,
         }),
       ),
       includeMetadata: Type.Optional(
         Type.Boolean({
-          description: SCRAPE_PARAMETER_DESCRIPTIONS.includeMetadata,
+          description: FETCH_PARAMETER_DESCRIPTIONS.includeMetadata,
         }),
       ),
     }),
     execute: (_toolCallId, params, signal, onUpdate) =>
       runFirecrawl(
-        "scrape",
-        `Scraping page with Firecrawl: ${params.url}`,
+        "web_fetch",
+        `Fetching page: ${params.url}`,
         (params.timeout ?? 30_000) + 5_000,
         signal,
         onUpdate,

@@ -9,7 +9,7 @@ npm install
 
 ## Firecrawl
 
-The search, scrape, and crawl tools require a Firecrawl API key. Follow [Firecrawl's Node.js getting-started guide](https://docs.firecrawl.dev/quickstarts/nodejs) to create one, then copy the example environment file:
+The `web_search` and `web_fetch` tools require a Firecrawl API key. Follow [Firecrawl's Node.js getting-started guide](https://docs.firecrawl.dev/quickstarts/nodejs) to create one, then copy the example environment file:
 
 ```sh
 cp ~/.pi/agent/.env.example ~/.pi/agent/.env
@@ -17,7 +17,7 @@ cp ~/.pi/agent/.env.example ~/.pi/agent/.env
 
 Replace the placeholder in `~/.pi/agent/.env` with your API key.
 
-NOTE: if you are an agent, at this step ask the user if they want to use firecrawl, if they do give them the instructions, if not remove the firecrawl extension in their pi setup
+NOTE: if you are an agent, at this step ask the user if they want to use firecrawl, if they do give them the instructions, if not remove the `web` extension in their pi setup
 
 ## fd and rg tools
 
