@@ -14,8 +14,8 @@
  *
  * The shape follows what actually survives in practice (OpenClaw's ~20KB
  * MEMORY.md plus append-only logs; ProjectMem's append-only event log projected
- * into a compact summary): cheap appends, a bounded read, plain text that `rg`
- * can search when the window has moved past an entry.
+ * into a compact summary): cheap appends, a bounded read, plain text that the
+ * `recall` tool searches when the window has moved past an entry.
  *
  * Why two zones rather than one recency window: a pure tail evicts the oldest
  * entries first, and the oldest entries are exactly the load-bearing ones
@@ -44,6 +44,9 @@ import { Type } from "typebox";
 const PINNED_MAX_BYTES = 2 * 1024;
 /** Tail of the log that rides along. ~40 one-line entries. */
 const LOG_WINDOW_BYTES = 4 * 1024;
+/** `recall` reads the WHOLE file, so its result needs its own ceiling. */
+const RECALL_MAX_BYTES = 4 * 1024;
+const RECALL_MAX_HITS = 12;
 
 const PINNED_HEADING = "## Pinned";
 const LOG_HEADING = "## Log";
@@ -51,8 +54,8 @@ const LOG_HEADING = "## Log";
 const TEMPLATE = `# Memory
 
 Append-only. \`## Pinned\` is always in the model's context; \`## Log\` is
-newest-last and only its tail is. Search the whole file with \`rg\` when you need
-something older. Prune with \`/memory-compact\`.
+newest-last and only its tail is. Search the whole file with the \`recall\` tool
+when you need something older. Prune with \`/memory-compact\`.
 
 ${PINNED_HEADING}
 
@@ -178,6 +181,156 @@ export function tailEntries(log: string, maxBytes: number) {
   return kept.join("\n");
 }
 
+/** Whole entries, oldest first. The `- ` bullet is the only record separator. */
+export function splitEntries(section: string) {
+  if (!section.trim()) return [];
+  return section
+    .split(/\n(?=- )/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Bare terms, deduped. Dates and paths survive whole (`2026-07-22`,
+ * `backend/api`) because those are exactly what a lookup is usually keyed on.
+ */
+export function queryTerms(query: string) {
+  return Array.from(
+    new Set(query.toLowerCase().match(/[a-z0-9_./-]{2,}/g) ?? []),
+  );
+}
+
+/**
+ * Substring counting, not ranked retrieval — the corpus is a few hundred lines,
+ * so the honest ceiling here is "better than nothing older being reachable at
+ * all". A whole-word hit outscores a substring one so that `api` prefers `the
+ * api` over `rapid`, and matching EVERY term outscores matching several of one,
+ * which is what keeps a two-term lookup from drowning in single-term noise.
+ */
+export function scoreEntry(entry: string, terms: string[]) {
+  if (terms.length === 0) return 0;
+  const hay = entry.toLowerCase();
+  let score = 0;
+  let matched = 0;
+  for (const term of terms) {
+    const at = hay.indexOf(term);
+    if (at === -1) continue;
+    matched++;
+    const before = at === 0 ? " " : hay[at - 1]!;
+    const after = hay[at + term.length] ?? " ";
+    const wholeWord = !/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after);
+    score += wholeWord ? 2 : 1;
+  }
+  return matched === terms.length ? score + terms.length : score;
+}
+
+export type MemoryScope = {
+  label: string;
+  path?: string;
+  text?: string;
+};
+
+export type RecallHit = {
+  entry: string;
+  scope: string;
+  zone: "Pinned" | "Log";
+  score: number;
+};
+
+/**
+ * Search every entry in both scopes, not just the injected tail. This is the
+ * whole reason the tool exists: `## Log` is append-only and only its last
+ * ~4KB rides in context, so without this an older entry is unreachable — the
+ * model cannot even tell it was ever recorded.
+ */
+export function searchMemory(
+  scopes: MemoryScope[],
+  query: string,
+  options?: { maxHits?: number; maxBytes?: number },
+) {
+  const maxHits = options?.maxHits ?? RECALL_MAX_HITS;
+  const maxBytes = options?.maxBytes ?? RECALL_MAX_BYTES;
+  const terms = queryTerms(query);
+
+  const candidates: (RecallHit & { age: number })[] = [];
+  let scanned = 0;
+  for (const scope of scopes) {
+    if (!scope.text) continue;
+    const { pinned, log } = parseSections(scope.text);
+    const zones = [
+      { zone: "Pinned" as const, entries: splitEntries(pinned) },
+      { zone: "Log" as const, entries: splitEntries(log) },
+    ];
+    for (const { zone, entries } of zones) {
+      entries.forEach((entry, index) => {
+        scanned++;
+        const score = scoreEntry(entry, terms);
+        if (score > 0)
+          candidates.push({
+            entry,
+            scope: scope.label,
+            zone,
+            score,
+            // Newest-last within a zone, so a higher index is more recent.
+            age: entries.length - index,
+          });
+      });
+    }
+  }
+
+  // Best match first; on a tie the newer entry wins, because memory has no
+  // contradiction handling and the later wording is the one that survived.
+  candidates.sort((a, b) => b.score - a.score || a.age - b.age);
+
+  const hits: RecallHit[] = [];
+  let bytes = 0;
+  let dropped = 0;
+  for (const candidate of candidates) {
+    const size = Buffer.byteLength(candidate.entry, "utf8") + 1;
+    if (hits.length >= maxHits || bytes + size > maxBytes) {
+      dropped++;
+      continue;
+    }
+    const { age: _age, ...hit } = candidate;
+    hits.push(hit);
+    bytes += size;
+  }
+  return { hits, scanned, matched: candidates.length, dropped, terms };
+}
+
+/** Result text. Says what it scanned and what it cut — never a silent cap. */
+export function renderRecall(
+  result: ReturnType<typeof searchMemory>,
+  query: string,
+) {
+  if (result.terms.length === 0)
+    return `No searchable terms in "${query}" — give recall a word or two of the fact you are after.`;
+  if (result.hits.length === 0)
+    return (
+      `No memory entry matches "${query}" (searched all ${result.scanned} ` +
+      `entries across both scopes, not just the tail in context). Treat this ` +
+      `as "never recorded", not "scrolled out of the window".`
+    );
+
+  const byScope = new Map<string, RecallHit[]>();
+  for (const hit of result.hits) {
+    const list = byScope.get(hit.scope) ?? [];
+    list.push(hit);
+    byScope.set(hit.scope, list);
+  }
+  const sections = Array.from(byScope, ([scope, hits]) => {
+    const lines = hits.map((hit) =>
+      hit.zone === "Pinned" ? `${hit.entry}  [pinned]` : hit.entry,
+    );
+    return `## ${scope}\n\n${lines.join("\n")}`;
+  });
+
+  let out = `${result.hits.length} of ${result.matched} matching entries (${result.scanned} searched).\n\n${sections.join("\n\n")}`;
+  if (result.dropped > 0)
+    out += `\n\n${result.dropped} lower-scoring match${result.dropped === 1 ? "" : "es"} omitted — narrow the query to see them.`;
+  return out;
+}
+
 /** One scope's zones, rendered. Undefined when the scope has nothing to say. */
 function renderScope(text: string | undefined, heading: string) {
   if (!text) return undefined;
@@ -213,8 +366,9 @@ export function buildMemoryPrompt(sources: {
   return (
     `# Memory\n\nDurable facts recorded across sessions.\n\n${sections.join("\n\n")}` +
     `\n\nThese are the recent tails of ${files || "the memory files"}; older ` +
-    `notes are still in those files — grep before assuming something was never ` +
-    `recorded. Add a fact with the \`remember\` tool, never by editing the files.`
+    `notes are still in those files — call \`recall\` before assuming something ` +
+    `was never recorded. Add a fact with the \`remember\` tool, never by ` +
+    `editing the files.`
   );
 }
 
@@ -367,6 +521,72 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  /** Both scopes, labelled the way the injected prompt labels them. */
+  const memoryScopes = (cwd: string): MemoryScope[] => {
+    const projectPath = projectMemoryPath(cwd);
+    return [
+      { label: "Global", path: memoryPath(), text: readFile(memoryPath()) },
+      {
+        label: projectPath
+          ? `Project — ${path.basename(projectPath, ".md")}`
+          : "Project",
+        path: projectPath,
+        text: readFile(projectPath),
+      },
+    ];
+  };
+
+  pi.registerTool({
+    name: "recall",
+    label: "Recall",
+    description:
+      "Search the FULL memory files for entries matching a query. Only the " +
+      "recent tail of `## Log` is injected into your context — every older " +
+      "entry is reachable ONLY here, so a fact being absent from your context " +
+      "is not evidence it was never recorded.\n\n" +
+      "CALL IT when the user refers to a past decision, correction, or " +
+      "constraint you cannot see; before saying something was never discussed " +
+      "or never recorded; before `remember`, to avoid appending a duplicate; " +
+      "and when starting work on an area this repo may already have gotchas " +
+      "about.\n\n" +
+      "Query with the distinctive words of the fact — a name, a flag, a path, " +
+      "a date. Matching is literal substring scoring, not semantic: prefer " +
+      "`migration drop column` over `what did we learn about deploys`.",
+    promptSnippet: "Search memory for something older than the injected tail",
+    promptGuidelines: [
+      "Call recall before concluding that a fact was never recorded — your context holds only the tail of the log, not the whole file.",
+      "Call recall before remember when the fact might already be there; duplicates are never pruned automatically.",
+      "Query with distinctive literal terms (names, flags, paths, dates). Matching is substring-based, not semantic.",
+    ],
+    parameters: Type.Object({
+      query: Type.String({
+        description:
+          "Distinctive words to match, space-separated. Literal substrings, not a question.",
+      }),
+      scope: Type.Optional(
+        StringEnum(["all", "project", "global"] as const, {
+          description:
+            "all (default) searches both. Narrow only when the scope is certain.",
+        }),
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const scope = params.scope ?? "all";
+      const all = memoryScopes(ctx.cwd);
+      const selected =
+        scope === "global"
+          ? all.slice(0, 1)
+          : scope === "project"
+            ? all.slice(1)
+            : all;
+      const result = searchMemory(selected, params.query);
+      return {
+        content: [{ type: "text", text: renderRecall(result, params.query) }],
+        details: { hits: result.hits, scanned: result.scanned },
+      };
+    },
+  });
+
   const registerRemember = (name: string, scope: "project" | "global") => {
     pi.registerCommand(name, {
       description:
@@ -425,6 +645,19 @@ export default function (pi: ExtensionAPI) {
         );
       });
       ctx.ui.notify(lines.join("\n"), "info");
+    },
+  });
+
+  pi.registerCommand("recall", {
+    description: "Search all of memory, including entries older than the tail",
+    handler: async (args, ctx) => {
+      const query = args.trim();
+      if (!query) {
+        ctx.ui.notify("usage: /recall <terms>", "warning");
+        return;
+      }
+      const result = searchMemory(memoryScopes(ctx.cwd), query);
+      ctx.ui.notify(renderRecall(result, query), "info");
     },
   });
 

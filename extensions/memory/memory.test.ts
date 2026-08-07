@@ -5,7 +5,12 @@ import {
   buildMemoryPrompt,
   formatEntry,
   parseSections,
+  queryTerms,
+  renderRecall,
   repoSlug,
+  scoreEntry,
+  searchMemory,
+  splitEntries,
   tailEntries,
 } from "./index.ts";
 
@@ -81,7 +86,8 @@ test("the prompt tells the model the window is partial", () => {
     paths: { global: "/g.md" },
   });
   assert.ok(prompt);
-  assert.match(prompt, /grep before assuming/);
+  // The escape hatch must be named, or the model treats the tail as the whole.
+  assert.match(prompt, /call `recall` before assuming/);
 });
 
 test("appending lands inside the right section", () => {
@@ -184,4 +190,146 @@ test("a date INSIDE the fact is left alone", () => {
     formatEntry("backend is uv as of 2026-07-01", day),
     /— backend is uv as of 2026-07-01$/,
   );
+});
+
+test("recall reaches an entry the injected window has scrolled past", () => {
+  // The bug this tool exists for: without it, entry 0 is unreachable and the
+  // model cannot tell it was ever recorded.
+  const log = [
+    "- 2026-01-01 — celery broker is shared across every worktree",
+    ...Array.from({ length: 400 }, (_, i) => `- filler ${i}`),
+  ].join("\n");
+  const text = `## Pinned\n\n## Log\n\n${log}`;
+
+  const prompt = buildMemoryPrompt({ global: text });
+  assert.ok(prompt);
+  assert.doesNotMatch(prompt, /celery broker/);
+
+  const { hits } = searchMemory([{ label: "Global", text }], "celery broker");
+  assert.equal(hits.length, 1);
+  assert.match(hits[0]!.entry, /celery broker/);
+});
+
+test("recall searches both zones and labels which is which", () => {
+  const result = searchMemory(
+    [
+      {
+        label: "Global",
+        text: "## Pinned\n\n- never force-push to master\n\n## Log\n\n- master is the trunk branch",
+      },
+    ],
+    "master",
+  );
+  assert.equal(result.hits.length, 2);
+  assert.deepEqual(
+    new Set(result.hits.map((hit) => hit.zone)),
+    new Set(["Pinned", "Log"]),
+  );
+  assert.match(renderRecall(result, "master"), /\[pinned\]/);
+});
+
+test("matching every term beats matching one of them repeatedly", () => {
+  // Otherwise a two-term lookup drowns in entries that spam a single term.
+  const both = scoreEntry("- migration drop column", ["migration", "column"]);
+  const one = scoreEntry("- migration migration migration", [
+    "migration",
+    "column",
+  ]);
+  assert.ok(both > one, `expected ${both} > ${one}`);
+});
+
+test("a whole-word hit outranks a substring hit", () => {
+  assert.ok(
+    scoreEntry("- the api is slow", ["api"]) >
+      scoreEntry("- rapid growth", ["api"]),
+  );
+});
+
+test("ties go to the newer entry", () => {
+  // Memory has no contradiction handling, so the later wording is the one that
+  // survived and must come first.
+  const { hits } = searchMemory(
+    [
+      {
+        label: "Global",
+        text: "## Pinned\n\n## Log\n\n- 2026-01-01 — deploy is manual\n- 2026-06-01 — deploy is manual",
+      },
+    ],
+    "deploy",
+  );
+  assert.match(hits[0]!.entry, /2026-06-01/);
+});
+
+test("recall says it searched everything when it finds nothing", () => {
+  // "Not in the tail" and "never recorded" are different claims; only recall
+  // can distinguish them, so the miss has to be explicit about which it is.
+  const result = searchMemory(
+    [{ label: "Global", text: "## Pinned\n\n## Log\n\n- 2026-01-01 — a fact" }],
+    "kubernetes",
+  );
+  assert.equal(result.hits.length, 0);
+  assert.match(renderRecall(result, "kubernetes"), /never recorded/);
+});
+
+test("an over-budget result set is capped out loud, not silently", () => {
+  const log = Array.from(
+    { length: 40 },
+    (_, i) => `- 2026-01-01 — deploy note ${i}`,
+  ).join("\n");
+  const result = searchMemory(
+    [{ label: "Global", text: `## Pinned\n\n## Log\n\n${log}` }],
+    "deploy",
+  );
+  assert.equal(result.hits.length, 12);
+  assert.equal(result.matched, 40);
+  assert.match(
+    renderRecall(result, "deploy"),
+    /28 lower-scoring matches omitted/,
+  );
+});
+
+test("a query with no usable terms asks for better terms", () => {
+  assert.deepEqual(queryTerms("? !"), []);
+  const result = searchMemory([{ label: "Global", text: FILE }], "?");
+  assert.match(renderRecall(result, "?"), /No searchable terms/);
+});
+
+test("dates and paths survive tokenizing as single terms", () => {
+  // These are exactly what a lookup keys on, so splitting them is a real miss.
+  assert.deepEqual(queryTerms("2026-07-22 backend/api"), [
+    "2026-07-22",
+    "backend/api",
+  ]);
+});
+
+test("multi-line entries are searched and returned whole", () => {
+  const { hits } = searchMemory(
+    [
+      {
+        label: "Global",
+        text: "## Pinned\n\n## Log\n\n- one\n  continued with valkey\n- two",
+      },
+    ],
+    "valkey",
+  );
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]!.entry, "- one\n  continued with valkey");
+});
+
+test("splitting an empty section yields no entries", () => {
+  assert.deepEqual(splitEntries(""), []);
+  assert.deepEqual(splitEntries("\n\n"), []);
+});
+
+test("a scope with no file is skipped rather than throwing", () => {
+  // Outside a git repo the project scope has no path and no text.
+  const result = searchMemory(
+    [
+      { label: "Global", text: "## Pinned\n\n## Log\n\n- 2026-01-01 — a fact" },
+      { label: "Project", text: undefined },
+    ],
+    "fact",
+  );
+  assert.equal(result.hits.length, 1);
+  assert.equal(result.hits[0]!.scope, "Global");
 });
