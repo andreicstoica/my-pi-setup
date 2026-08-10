@@ -3,8 +3,38 @@ import test from "node:test";
 import {
   buildChildPrompt,
   buildSubagentResultMessage,
+  describeSendOutcome,
   stripReportPreamble,
 } from "./src/prompt.ts";
+
+test("a send to a live run reads as steering only where the backend supports it", () => {
+  const steered = describeSendOutcome({
+    id: "sa-x",
+    running: true,
+    steering: true,
+  });
+  assert.match(steered, /while it runs/);
+  assert.doesNotMatch(steered, /cancel/);
+
+  const queued = describeSendOutcome({
+    id: "sa-x",
+    running: true,
+    steering: false,
+  });
+  assert.match(queued, /cannot steer a live run/);
+  // A parent that wanted to stop the run needs to be told the real lever.
+  assert.match(queued, /subagent_cancel/);
+});
+
+test("a send to a settled subagent is described as a fresh run", () => {
+  const restarted = describeSendOutcome({
+    id: "sa-x",
+    running: false,
+    steering: true,
+  });
+  assert.match(restarted, /already settled/);
+  assert.match(restarted, /existing context/);
+});
 
 test("buildChildPrompt appends the report contract once", () => {
   const composed = buildChildPrompt("  Investigate the auth regression.  ");

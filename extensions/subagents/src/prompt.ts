@@ -8,7 +8,7 @@
  * every request. The `harness` parameter description carries the short version.
  */
 export const SUBAGENT_SPAWN_TOOL_DESCRIPTION =
-  "Spawn a background subagent: a fully autonomous, headless agent with its own context window and the chosen harness's normal host permissions. Fire-and-forget — returns an id immediately, and the subagent's final output is queued back to you when it settles, or collect it with subagent_wait. Children cannot see this conversation, ask the user, or spawn further agents, so the prompt must be self-contained. Read the `subagents` skill before choosing harness, model, or effort. Trusted working directories only. Max 4 running at once.";
+  "Spawn a background subagent: a fully autonomous, headless agent with its own context window and the chosen harness's normal host permissions. Fire-and-forget — returns an id immediately, and the subagent's final output is queued back to you when it settles, or collect it with subagent_wait. Children cannot see this conversation, ask the user, or spawn further agents, so the prompt must be self-contained. Set `task_class` and let it derive the harness, model, and effort; read the `subagents` skill when no class fits or you mean to override one. Trusted working directories only. Max 4 running at once.";
 
 /** Adds background subagent delegation to the parent model's available-tools prompt. */
 export const SUBAGENT_SPAWN_PROMPT_SNIPPET =
@@ -17,8 +17,9 @@ export const SUBAGENT_SPAWN_PROMPT_SNIPPET =
 /** Guides the parent model to delegate standalone tasks and avoid unnecessary blocking waits. */
 export const SUBAGENT_SPAWN_PROMPT_GUIDELINES = [
   "Use subagent_spawn to delegate self-contained tasks that can run in the background; give it a complete, standalone prompt.",
-  "Pick the subagent harness per task — there is no default-preferred harness. Match it to the work (tooling the task needs, the user's request, which harness suits the job).",
+  "Classify the work with task_class rather than picking a harness and model yourself; there is no default-preferred harness, and the class encodes which one suits the task. Override a field only for a reason you can state.",
   "After subagent_spawn, keep working; results arrive automatically. Only call subagent_wait when you cannot proceed without the result.",
+  "A subagent whose report is nearly right, or one you can see drifting, takes subagent_send — reusing its context costs far less than re-spawning it. A subagent whose context is wrong takes subagent_cancel and a better prompt.",
 ];
 
 /** Model-facing schema descriptions for subagent_spawn task and execution options. */
@@ -26,8 +27,10 @@ export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
   prompt:
     "Task prompt for the subagent. Must be self-contained: include all needed context, file paths, and what to report back. A standard report contract is appended automatically, so state what you need reported, not how to format it.",
   name: 'Short human-readable name for this subagent (2-4 words), shown in listings and the UI. Its slug also becomes the subagent id used by wait/check/cancel, so name it after the task ("investigate auth regression" -> sa-investigate-auth-regression), not "agent 1".',
+  taskClass:
+    "What kind of work this is. Preferred over choosing a harness and model yourself: the class derives the harness, model, and effort that suit it, and appends its scope constraint to the child's prompt. Give harness/model/reasoning_effort only to override a specific field of the class, or when no class fits.",
   harness:
-    'Harness to run the subagent on: "pi" (in-process pi session; inherits this environment), "claude" (Claude Code), "codex" (Codex CLI), or "cursor" (Cursor Agent CLI). Choose deliberately per task.',
+    'Harness to run the subagent on: "pi" (in-process pi session; inherits this environment), "claude" (Claude Code), "codex" (Codex CLI), or "cursor" (Cursor Agent CLI). Required only when task_class is omitted; otherwise an override, and overriding it drops the class\'s model too (a model id belongs to one harness).',
   workingDir:
     "Trusted working directory for the autonomous child (default: current working directory)",
   model:
@@ -49,9 +52,17 @@ export const CHILD_REPORT_CONTRACT =
   "---\n" +
   "Report contract: your final message IS the result handed to the orchestrator, which cannot see this transcript. Lead with the answer — no preamble, no narration of the steps you took. Give concrete file paths, symbols, and commands rather than descriptions of them. State plainly anything you could not verify, could not do, or deliberately left undone; a gap you name is useful, a gap you omit is a bug. If you were asked a question, answer it in the first sentence.";
 
-/** Composes the model-authored task prompt with the standing report contract. */
-export function buildChildPrompt(prompt: string) {
-  return `${prompt.trim()}\n\n${CHILD_REPORT_CONTRACT}`;
+/**
+ * Composes the model-authored task prompt with the task class's constraint (if
+ * any) and the standing report contract. The constraint sits above the report
+ * contract and below the task: it scopes the work, so it has to be read as part
+ * of the instructions rather than as reporting advice.
+ */
+export function buildChildPrompt(prompt: string, constraint?: string) {
+  const body = constraint
+    ? `${prompt.trim()}\n\n${constraint.trim()}`
+    : prompt.trim();
+  return `${body}\n\n${CHILD_REPORT_CONTRACT}`;
 }
 
 /**
@@ -130,6 +141,48 @@ export const SUBAGENT_CHECK_PARAMETER_DESCRIPTIONS = {
 /** Describes listing all tracked running and settled subagents. */
 export const SUBAGENT_LIST_TOOL_DESCRIPTION =
   "List all subagents (running and finished) with their harness and status.";
+
+/**
+ * Describes sending a follow-up message into an existing subagent.
+ *
+ * Deliberately narrow. Re-spawning throws away everything the child already
+ * paid for — the role file, AGENTS.md, its greps and file reads — so a
+ * follow-up is much cheaper than a fresh spawn when the child's context is
+ * still the right context. But the mined history of this setup shows the
+ * orchestrator over-uses whatever interactive subagent tool exists, so the
+ * description states the two cases that justify a send and names the case
+ * that does not.
+ */
+export const SUBAGENT_SEND_TOOL_DESCRIPTION =
+  "Send a follow-up message into a subagent that already exists, reusing its context instead of paying for a fresh spawn. Two uses only: (1) a settled subagent whose report is nearly right — ask for the missing piece; (2) a running subagent you can see is drifting — correct it. NOT a chat channel: do not send progress questions, acknowledgements, or anything subagent_check already answers. If the child's context is wrong rather than incomplete, cancel it and spawn a better prompt instead. Sending to a settled subagent starts a fresh run and occupies one of the 4 concurrent slots; its new output is delivered to you automatically.";
+
+/** Model-facing schema descriptions for subagent_send. */
+export const SUBAGENT_SEND_PARAMETER_DESCRIPTIONS = {
+  id: "Subagent id, exactly as returned by subagent_spawn",
+  message:
+    "The follow-up, self-contained as to what you now want. The child kept its own context but never saw this conversation, so name any new file path, constraint, or finding explicitly. State the correction or the gap, not the whole task again.",
+};
+
+/**
+ * What a send actually did, in the child's terms. `steering` differs per
+ * backend and the difference is material: on pi a send reaches the live run
+ * before its next model call, on claude it is queued for a later response,
+ * and on codex and cursor it cannot touch the active run at all — it waits
+ * for the current one to settle. Telling the parent "steered" in all four
+ * cases would be a lie it would then plan around.
+ */
+export function describeSendOutcome(options: {
+  id: string;
+  running: boolean;
+  steering: boolean;
+}) {
+  if (!options.running) {
+    return `Sent to ${options.id}. It had already settled, so this starts a fresh run on its existing context; the new result is delivered to you automatically.`;
+  }
+  return options.steering
+    ? `Sent to ${options.id} while it runs. It reaches the run before its next model call — treat it as a course correction, not an interrupt; the current tool call still completes.`
+    : `Queued for ${options.id}. This harness cannot steer a live run, so the message is only picked up once the current run settles. If the run must stop now, use subagent_cancel instead.`;
+}
 
 /**
  * A child can exit "done" with nothing but a provider error as its whole

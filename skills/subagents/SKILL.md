@@ -13,7 +13,7 @@ Each subagent is headless, has its own context window, cannot see the parent con
 **Prompt nicknames:** “pi”, “pi agent”, “pi subagent”
 **Best default:** Use when the user does not request another harness.
 
-Always pass `model` and `reasoning_effort` explicitly. Omitting them inherits the parent's _current_ model — and because every `/model` pick and Ctrl+P cycle rewrites the global default, the parent may be on a cheap model without either of us having chosen it for this task. Never let a spawn inherit.
+Never let a `pi` spawn inherit its model. Omitting `model` and `reasoning_effort` inherits the parent's _current_ model — and because every `/model` pick and Ctrl+P cycle rewrites the global default, the parent may be on a cheap model without either of us having chosen it for this task. A `task_class` sets both, which is the reason to prefer it; a spawn without a class must pass both by hand.
 
 Spawn `pi` subagents on the `openai-codex` provider, or on `opencode` (OpenCode Zen) for the non-OpenAI models it unlocks.
 
@@ -108,17 +108,23 @@ Requires the Cursor Agent CLI (`cursor-agent`) to be installed and logged in. Re
 
 ## Scoping work to models
 
-Pick the model from the _task class_, and cap the task to what that class allows. A cheap model is not a worse version of a good one — it is a model that must be given less rope. If a task does not fit a row, split it until it does; never widen the rope instead.
+**This table now lives in code.** `subagent_spawn` takes a `task_class`, and `extensions/subagents/src/routing.ts` derives the harness, model, and effort from it and appends the row's cap to the child's prompt. Pass the class; do not retype the model id. The table below is the reasoning behind each row — read it to choose a class, or to decide that a class is wrong for this task.
 
-| Task class                                                                         | Model                       | Effort   | Hard cap                                                                 |
-| ---------------------------------------------------------------------------------- | --------------------------- | -------- | ------------------------------------------------------------------------ |
-| **Recon** — locate files, trace a flow, summarize prior art                        | `openai-codex/gpt-5.6-luna` | `medium` | read-only; say "Do not edit any file"                                    |
-| **Mechanical edit** — apply a stated diff, rename, mirror a file, delete dead code | `openai-codex/gpt-5.6-luna` | `medium` | ≤3 files, all named in the prompt; zero design decisions left open       |
-| **Scoped implementation** — one component or endpoint, behavior fully specified    | `openai-codex/gpt-5.6-sol`  | `high`   | ≤8 files; the prompt states the desired behavior, not just the goal      |
-| **Open-ended implementation** — match a design, wire a flow across FE+BE           | `claude` / `fable`          | `high`   | needs the 1M window; **never** sonnet/opus (200k) and never luna         |
-| **MCP-dependent** — Linear, Figma, Sentry, Liftoff prod                            | `claude` / `fable`          | `high`   | only harness with MCP; keep it to fetching + reporting, not implementing |
-| **Review / judgment** — is this right, what's risky, what's missing                | `codex` — see budget rule   | `high`   | read-only; a reviewer that edits stops being a second opinion            |
-| **Deep single question** — one hard problem, no breadth                            | `openai-codex/gpt-5.6-luna` | `xhigh`  | one question; luna at xhigh is for depth, not for scope                  |
+Pick the class from the _work_, and cap the task to what that class allows. A cheap model is not a worse version of a good one — it is a model that must be given less rope. If a task does not fit a row, split it until it does; never widen the rope instead.
+
+| `task_class`             | The work                                                       | Harness / model                    | Effort   | Cap the class enforces in the child prompt                          |
+| ------------------------ | -------------------------------------------------------------- | ---------------------------------- | -------- | ------------------------------------------------------------------- |
+| `recon`                  | locate files, trace a flow, summarize prior art                | `pi` / `openai-codex/gpt-5.6-luna` | `medium` | read-only                                                           |
+| `mechanical_edit`        | apply a stated diff, rename, mirror a file, delete dead code   | `pi` / `openai-codex/gpt-5.6-luna` | `medium` | ≤3 files, all named in the prompt; zero design decisions left open  |
+| `scoped_implementation`  | one component or endpoint, behavior fully specified            | `pi` / `openai-codex/gpt-5.6-sol`  | `high`   | ≤8 files; behavior stated, not just the goal                        |
+| `open_implementation`    | match a design, wire a flow across FE+BE                       | `claude` / `fable`                 | `high`   | report the judgment calls made; needs the 1M window, never 200k     |
+| `mcp_dependent`          | Linear, Figma, Sentry, Liftoff prod                            | `claude` / `fable`                 | `high`   | fetch and report; no implementing, no MCP writes                    |
+| `review`                 | is this right, what's risky, what's missing                    | `codex` / `gpt-5.6-terra`          | `high`   | read-only, second opinion not second author, >80% confidence        |
+| `deep_question`          | one hard problem, no breadth                                   | `pi` / `openai-codex/gpt-5.6-luna` | `xhigh`  | read-only; answer the one question, do not broaden                  |
+
+**Overrides are per field, and the harness is special.** `model` alone re-points the class's harness — that is how the codex budget rule below is applied (`review` + `model: gpt-5.6-luna` for a bounded diff). But overriding `harness` **drops the class's model**, because a model id belongs to one harness: `openai-codex/gpt-5.6-luna` means nothing to codex or claude. After a harness override, name the model too.
+
+**The caps are still instruction-only.** The class writes them into the child's prompt so they no longer depend on you remembering to — but nothing inspects the child's diff. A `recon` child that edited a file is a real failure worth reporting to the user.
 
 **Discrete goals go to codex; open-ended goals go to claude.** This is the split behind the table. A discrete goal has a checkable answer — is this correct, what breaks, does this match the spec — and codex is the stronger backend for it across its whole range (`luna` → `terra` → `sol`). An open-ended goal has to be interpreted before it can be done — match this design, wire this flow, decide what "good" means here — and that is where `claude`, especially `fable`, wins. Review and judgment are discrete, so they are codex work now.
 
@@ -184,9 +190,10 @@ Claude Code isolates parallel file-mutating agents in their own git worktrees fo
 
 ## Spawn and Manage
 
-Call `subagent_spawn` with a complete `prompt`, short `name`, chosen `harness`, `model`, and `reasoning_effort`, plus optional `working_dir`. At most four subagents run concurrently.
+Call `subagent_spawn` with a complete `prompt`, a short `name`, and a `task_class`, plus optional `working_dir` and any per-field override. `harness` is required only when no class fits. At most four subagents run concurrently.
 
 - `subagent_check({ id })`: peek without blocking.
+- `subagent_send({ id, message })`: follow up on a settled near-miss, or correct a drifting run.
 - `subagent_list()`: list all runs.
 - `subagent_wait({ ids })`: block only when results are required to proceed.
 - `subagent_cancel({ ids })`: stop runs while preserving partial transcripts.
@@ -196,6 +203,19 @@ Results return automatically. After spawning, continue useful parent work instea
 
 **Watch context, not the clock.** There is no spawn timeout — a subagent that looks hung is usually burning its window. `subagent_check` reports context used and turn count. A run past **60% with no text output yet** is not going to finish cleanly: cancel it, and re-spawn the work split in two rather than re-running the same prompt. Letting it reach 100% wastes the whole run and returns nothing.
 
-**There is no steer.** Claude Code can send a correcting message into a live agent; pi exposes no such tool — `subagent_send` does not exist, and `/subagents` takeover is the user's, not yours. So a drifting run has exactly two outcomes: let it finish, or cancel and re-spawn with a better prompt. Front-load the prompt accordingly.
+**`subagent_send` is the cheap fix; re-spawning is the expensive one.** A follow-up reuses the child's context — the role file it read, `AGENTS.md`, its greps, its file reads. A re-spawn pays for all of that again. So a report that is nearly right, or a run you can see drifting, takes a send.
+
+**What a send actually does depends on the harness**, and the difference matters when a run is already going wrong:
+
+| Harness  | Send to a **running** child                                             |
+| -------- | ----------------------------------------------------------------------- |
+| `pi`     | reaches the run before its next model call — a real course correction    |
+| `claude` | accepted, but queued for a later response, not the current one          |
+| `codex`  | queued; picked up only once the current run settles                     |
+| `cursor` | queued; picked up only once the current run settles                     |
+
+No harness interrupts. If a codex or cursor run must stop **now**, that is `subagent_cancel`, not a send. Sending to a settled child starts a fresh run on its existing context and occupies one of the four slots.
+
+**A send does not repair a wrong premise.** Reusing context is only a saving when the context is right and the answer is incomplete. A child that misunderstood the task carries that misunderstanding into every follow-up; cancel it and spawn a prompt that says what the follow-ups would have had to say. Past two sends to one child, the prompt was the problem — the tool says so too.
 
 **Report, don't relay verbatim.** A finished subagent's output is written for you, not for the user. Read it, keep what changes the decision, and say it in your own words — including when a child's claim looks wrong. Never paste a wall of child output as your answer, and never state what a still-running child found; the result arrives on its own.

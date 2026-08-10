@@ -56,15 +56,18 @@ import {
 import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
   API_FAILURE_ADVICE,
-  buildSubagentResultMessage,
   buildChildPrompt,
+  buildSubagentResultMessage,
   buildSubagentSpawnResult,
+  describeSendOutcome,
   looksLikeApiFailure,
   SUBAGENT_CANCEL_PARAMETER_DESCRIPTIONS,
   SUBAGENT_CANCEL_TOOL_DESCRIPTION,
   SUBAGENT_CHECK_PARAMETER_DESCRIPTIONS,
   SUBAGENT_CHECK_TOOL_DESCRIPTION,
   SUBAGENT_LIST_TOOL_DESCRIPTION,
+  SUBAGENT_SEND_PARAMETER_DESCRIPTIONS,
+  SUBAGENT_SEND_TOOL_DESCRIPTION,
   SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS,
   SUBAGENT_SPAWN_PROMPT_GUIDELINES,
   SUBAGENT_SPAWN_PROMPT_SNIPPET,
@@ -73,6 +76,11 @@ import {
   SUBAGENT_WAIT_TOOL_DESCRIPTION,
 } from "./src/prompt.ts";
 import { createDeferredResultDelivery } from "./src/result-delivery.ts";
+import {
+  describeTaskClasses,
+  resolveRouting,
+  TASK_CLASS_NAMES,
+} from "./src/routing.ts";
 import {
   createSubagentRuntime,
   runTool,
@@ -191,6 +199,16 @@ export default function (pi: ExtensionAPI) {
    * an escalating "stop polling" nudge in the tool result. Reset on settle.
    */
   const checkCounts = new Map<string, number>();
+
+  /**
+   * Follow-ups sent per child, never reset. A send is cheap relative to a
+   * respawn, which is exactly why it invites the same over-use the check
+   * counter had to suppress: past the second follow-up the prompt was the
+   * problem, not the answer, and another message just adds turns to a child
+   * that already misunderstood. The count powers a nudge, not a hard block —
+   * a third send is sometimes genuinely right.
+   */
+  const sendCounts = new Map<string, number>();
 
   const getRuntime = () => (runtime ??= createSubagentRuntime());
 
@@ -331,9 +349,16 @@ export default function (pi: ExtensionAPI) {
       name: Type.String({
         description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.name,
       }),
-      harness: StringEnum(BACKEND_NAMES, {
-        description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.harness,
-      }),
+      task_class: Type.Optional(
+        StringEnum(TASK_CLASS_NAMES, {
+          description: `${SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.taskClass}\n${describeTaskClasses()}`,
+        }),
+      ),
+      harness: Type.Optional(
+        StringEnum(BACKEND_NAMES, {
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.harness,
+        }),
+      ),
       working_dir: Type.Optional(
         Type.String({
           description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.workingDir,
@@ -352,7 +377,18 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const manager = await getManager();
-      const harness = params.harness;
+      const routing = resolveRouting({
+        taskClass: params.task_class,
+        harness: params.harness,
+        model: params.model,
+        reasoningEffort: params.reasoning_effort,
+      });
+      const harness = routing.harness;
+      if (!harness) {
+        throw new Error(
+          `Give either task_class (which derives the harness, model, and effort) or an explicit harness. Task classes: ${TASK_CLASS_NAMES.join(", ")}.`,
+        );
+      }
 
       const cwd = path.resolve(ctx.cwd, params.working_dir ?? ".");
       if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
@@ -363,11 +399,11 @@ export default function (pi: ExtensionAPI) {
       const snap = await runTool(
         getRuntime(),
         manager.spawn(harness, {
-          prompt: buildChildPrompt(params.prompt),
+          prompt: buildChildPrompt(params.prompt, routing.constraint),
           title,
           cwd,
-          model: params.model,
-          reasoningEffort: params.reasoning_effort,
+          model: routing.model,
+          reasoningEffort: routing.reasoningEffort,
           parent: {
             parentCwd: ctx.cwd,
             projectTrusted: resolveChildProjectTrust({
@@ -659,6 +695,87 @@ export default function (pi: ExtensionAPI) {
         0,
         0,
       );
+    },
+  });
+
+  pi.registerTool({
+    name: "subagent_send",
+    label: "Send To Subagent",
+    description: SUBAGENT_SEND_TOOL_DESCRIPTION,
+    parameters: Type.Object({
+      id: Type.String({
+        description: SUBAGENT_SEND_PARAMETER_DESCRIPTIONS.id,
+      }),
+      message: Type.String({
+        description: SUBAGENT_SEND_PARAMETER_DESCRIPTIONS.message,
+      }),
+    }),
+    async execute(_toolCallId, params) {
+      const manager = await getManager();
+      const snap = manager.view.get(params.id);
+      if (!snap || !isModelVisible(snap)) {
+        const known = manager.view
+          .list()
+          .filter(isModelVisible)
+          .map((s) => s.id);
+        throw new Error(
+          `Unknown subagent id "${params.id}". Known: ${known.join(", ") || "none"}.`,
+        );
+      }
+      const message = params.message.trim();
+      if (!message) throw new Error("Provide a non-empty message.");
+
+      const running = snap.status === "running";
+      // The child kept its own context but never saw this conversation, so the
+      // follow-up needs the same standing report contract a spawn prompt gets.
+      await runTool(
+        getRuntime(),
+        manager.send(params.id, buildChildPrompt(message)),
+      );
+
+      const sends = (sendCounts.get(snap.id) ?? 0) + 1;
+      sendCounts.set(snap.id, sends);
+
+      let text = describeSendOutcome({
+        id: snap.id,
+        running,
+        steering: manager.capabilitiesOf(snap.backend)?.steering ?? false,
+      });
+      if (sends >= 3) {
+        text += `\n\n[This is follow-up ${sends} to ${snap.id}. Past two, the original prompt is the problem — stop sending and either spawn a fresh subagent with a prompt that states what these follow-ups had to add, or do the remaining work yourself.]`;
+      }
+
+      return {
+        content: [{ type: "text", text }],
+        details: {
+          id: snap.id,
+          title: snap.title,
+          status: running ? "running" : "restarting",
+        },
+      };
+    },
+
+    renderCall(args, theme) {
+      return new Text(
+        theme.fg("toolTitle", theme.bold("send ")) +
+          theme.fg("accent", args.id ?? "…"),
+        0,
+        0,
+      );
+    },
+
+    renderResult(result, { expanded }, theme) {
+      const details = (result.details ?? {}) as {
+        id?: string;
+        title?: string;
+        status?: string;
+      };
+      let text = renderRow(theme, details);
+      if (expanded) {
+        const body = resultText(result);
+        if (body) text += `\n${theme.fg("toolOutput", body)}`;
+      }
+      return new Text(text, 0, 0);
     },
   });
 

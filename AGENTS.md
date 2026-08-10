@@ -14,7 +14,7 @@ When asking questions, ask them one at a time.
 
 ## Delegation
 
-You orchestrate. Spawn subagents for work that is self-contained — see the `subagents` skill for harnesses, models, and effort levels.
+You orchestrate. Spawn subagents for work that is self-contained. Set `task_class` and let it pick the harness, model, and effort — read the `subagents` skill when no class fits, when you mean to override a field, or before any fan-out.
 
 **MCP tools do not exist in pi.** Linear, the Liftoff prod MCP, Figma, and Sentry are only reachable through Claude Code. For simple lookups use the bridge tools (`linear`, `sentry`, `figma`, `liftoff_sql`) — each runs a scoped headless claude query and returns text. Spawn a full `claude` subagent on `sonnet` only for multi-step or cross-service MCP work. Don't try to reach those services any other way. (`liftoff_sql` needs the VPN; `sentry` needs its connector re-authenticated in Claude Code from time to time.)
 

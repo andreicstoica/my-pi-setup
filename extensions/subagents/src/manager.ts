@@ -21,7 +21,11 @@ import {
   Scope,
   Stream,
 } from "effect";
-import type { SubagentBackend, SubagentSession } from "./backend.ts";
+import type {
+  BackendCapabilities,
+  SubagentBackend,
+  SubagentSession,
+} from "./backend.ts";
 import { BackendRegistry } from "./backend.ts";
 import type {
   BackendName,
@@ -161,6 +165,11 @@ export interface SubagentManagerShape {
     ids: ReadonlyArray<string>,
   ): Effect.Effect<ReadonlyArray<CancelResult>>;
   send(id: string, text: string): Effect.Effect<void, SendError>;
+  /**
+   * Capabilities of a wired backend, for tool descriptions and result text.
+   * Undefined for a name with no registered backend.
+   */
+  capabilitiesOf(backend: BackendName): BackendCapabilities | undefined;
   get(id: string): Effect.Effect<SubagentSnapshot | undefined>;
   readonly list: Effect.Effect<ReadonlyArray<SubagentSnapshot>>;
   readonly disposeAll: Effect.Effect<void>;
@@ -750,6 +759,7 @@ const makeManager = Effect.gen(function* () {
     waitFor,
     cancel,
     send,
+    capabilitiesOf: (backend) => registry.get(backend)?.capabilities,
     get: (id) => Effect.sync(() => entries.get(id)?.snapshot),
     list: Effect.sync(() => [...entries.values()].map((e) => e.snapshot)),
     disposeAll,

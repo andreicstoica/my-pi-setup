@@ -109,10 +109,7 @@ const CURSOR_EFFORT_FAMILIES: ReadonlyMap<
   string,
   { readonly tiers: ReadonlyArray<string>; readonly fallback: string }
 > = new Map([
-  [
-    "cursor-grok-4.5",
-    { tiers: ["low", "medium", "high"], fallback: "medium" },
-  ],
+  ["cursor-grok-4.5", { tiers: ["low", "medium", "high"], fallback: "medium" }],
 ]);
 
 /** Shorthands the model is likely to write, mapped to the canonical family. */
@@ -385,7 +382,10 @@ function toolResultPreview(result: JsonRecord | undefined) {
 }
 
 /** Result shape is `{ success: … }` or `{ error: … }`; absent means unknown. */
-function toolFailed(subtype: string | undefined, result: JsonRecord | undefined) {
+function toolFailed(
+  subtype: string | undefined,
+  result: JsonRecord | undefined,
+) {
   if (subtype === "failed" || subtype === "error" || subtype === "aborted") {
     return true;
   }
@@ -414,7 +414,8 @@ const makeCursorSession = (
     // spawn (and its concurrency reservation) or reject a valid new model id.
     const liveModels = yield* Effect.promise(() => listCursorModels(binary));
     const modelId = yield* Effect.try({
-      try: () => resolveCursorModel(task.model, task.reasoningEffort, liveModels),
+      try: () =>
+        resolveCursorModel(task.model, task.reasoningEffort, liveModels),
       catch: (error) => new SpawnError({ message: boundedError(error) }),
     });
 
@@ -505,7 +506,8 @@ const makeCursorSession = (
     };
 
     const handleEvent = (message: JsonRecord, serial: number) => {
-      if (state.closed || !state.activeRun || serial !== state.runSerial) return;
+      if (state.closed || !state.activeRun || serial !== state.runSerial)
+        return;
       const type = stringValue(message.type);
       const subtype = stringValue(message.subtype);
       switch (type) {
@@ -590,7 +592,10 @@ const makeCursorSession = (
     const finishRun = (serial: number, detail: string | undefined) => {
       if (!state.activeRun || serial !== state.runSerial) return;
       const partialText =
-        state.finalText || state.lastAssistantText || state.streamedText || undefined;
+        state.finalText ||
+        state.lastAssistantText ||
+        state.streamedText ||
+        undefined;
       if (state.interruptRequested) {
         settleRun({ _tag: "Interrupted", partialText }, serial);
         return;
@@ -654,10 +659,7 @@ const makeCursorSession = (
           detached: process.platform !== "win32",
         });
       } catch (error) {
-        settleRun(
-          { _tag: "Failed", errorText: boundedError(error) },
-          serial,
-        );
+        settleRun({ _tag: "Failed", errorText: boundedError(error) }, serial);
         return;
       }
       state.child = child;
@@ -726,7 +728,10 @@ const makeCursorSession = (
           settleRun({
             _tag: "Interrupted",
             partialText:
-              state.finalText || state.lastAssistantText || state.streamedText || undefined,
+              state.finalText ||
+              state.lastAssistantText ||
+              state.streamedText ||
+              undefined,
           });
         }
         state.closed = true;

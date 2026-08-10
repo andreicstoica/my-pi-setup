@@ -55,7 +55,10 @@ test("cursor model ids resolve from family + effort + fast", () => {
     resolveCursorModel("cursor-grok-4.5", "high"),
     "cursor-grok-4.5-high",
   );
-  assert.equal(resolveCursorModel("grok-4.5", undefined), "cursor-grok-4.5-medium");
+  assert.equal(
+    resolveCursorModel("grok-4.5", undefined),
+    "cursor-grok-4.5-medium",
+  );
   assert.equal(resolveCursorModel("grok", "max"), "cursor-grok-4.5-high");
   assert.equal(resolveCursorModel("grok-4.5", "off"), "cursor-grok-4.5-low");
   assert.equal(
@@ -85,7 +88,10 @@ test("invalid cursor model combinations fail loudly", () => {
     () => resolveCursorModel("composer-2.5-fast", undefined, ["composer-2.5"]),
     CursorModelError,
   );
-  assert.throws(() => resolveCursorModel("no-such-model", "high"), CursorModelError);
+  assert.throws(
+    () => resolveCursorModel("no-such-model", "high"),
+    CursorModelError,
+  );
   // The error names the valid ids rather than silently downgrading.
   assert.match(
     (() => {
@@ -111,11 +117,7 @@ test("parseListModels reads `<id> - <Display Name>` lines", () => {
       "not a model line",
     ].join("\n"),
   );
-  assert.deepEqual(ids, [
-    "auto",
-    "composer-2.5-fast",
-    "cursor-grok-4.5-high",
-  ]);
+  assert.deepEqual(ids, ["auto", "composer-2.5-fast", "cursor-grok-4.5-high"]);
 });
 
 test(
