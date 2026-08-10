@@ -10,8 +10,6 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import type { Cause, Scope } from "effect";
 import { Effect, Queue, Stream } from "effect";
 import type { SubagentBackend, SubagentSession } from "../backend.ts";
@@ -24,11 +22,11 @@ import type {
   TranscriptPart,
 } from "../domain.ts";
 import { SendError, SpawnError } from "../domain.ts";
+import { resolveBinary, terminateChild } from "./child.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const MODEL_LIST_TIMEOUT_MS = 5_000;
 const INTERRUPT_FALLBACK_MS = 1_500;
-const FORCE_KILL_AFTER_MS = 2_000;
 const PREVIEW_MAX_LENGTH = 1_024;
 /** A protocol line larger than this without a newline means a broken peer. */
 const STDOUT_BUFFER_MAX_BYTES = 4 * 1024 * 1024;
@@ -50,32 +48,14 @@ interface ToolState {
 
 let cachedCodexBinary: string | null | undefined;
 
-function executable(file: string) {
-  try {
-    fs.accessSync(file, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Resolve once on first use; availability checks after that are allocation-only. */
 function resolveCodexBinary() {
   if (cachedCodexBinary !== undefined) return cachedCodexBinary ?? undefined;
-  const names =
-    process.platform === "win32" ? ["codex.exe", "codex.cmd"] : ["codex"];
-  for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
-    if (!directory) continue;
-    for (const name of names) {
-      const candidate = path.join(directory, name);
-      if (executable(candidate)) {
-        cachedCodexBinary = candidate;
-        return candidate;
-      }
-    }
-  }
-  cachedCodexBinary = null;
-  return undefined;
+  const found = resolveBinary(
+    process.platform === "win32" ? ["codex.exe", "codex.cmd"] : ["codex"],
+  );
+  cachedCodexBinary = found ?? null;
+  return found;
 }
 
 function record(value: unknown): JsonRecord | undefined {
@@ -970,83 +950,6 @@ const makeCodexSession = (
       }),
     } satisfies SubagentSession;
   });
-
-/** Signal the whole process group on POSIX so tool descendants (shell
- * commands the app-server spawned) die with it; a wedged or force-killed
- * server must not orphan a still-running command in the workspace. */
-function killTree(
-  child: ChildProcessWithoutNullStreams,
-  signal: NodeJS.Signals,
-) {
-  if (process.platform === "win32" && child.pid) {
-    try {
-      const killer = spawn(
-        "taskkill",
-        [
-          "/pid",
-          String(child.pid),
-          "/T",
-          ...(signal === "SIGKILL" ? ["/F"] : []),
-        ],
-        { stdio: "ignore", windowsHide: true },
-      );
-      const killDirect = () => {
-        try {
-          child.kill(signal);
-        } catch {
-          // Process may already be gone.
-        }
-      };
-      killer.once("error", killDirect);
-      killer.once("exit", (code) => {
-        if (code !== 0) killDirect();
-      });
-      killer.unref();
-      return;
-    } catch {
-      // Fall through to a direct signal when taskkill cannot be launched.
-    }
-  }
-  if (process.platform !== "win32" && child.pid) {
-    try {
-      process.kill(-child.pid, signal);
-      return;
-    } catch {
-      // Group may already be gone; fall through to the direct signal.
-    }
-  }
-  try {
-    child.kill(signal);
-  } catch {
-    // Process may already be gone.
-  }
-}
-
-/** SIGTERM is normally enough; the second deadline covers a wedged Rust process. */
-function terminateChild(
-  child: ChildProcessWithoutNullStreams,
-  exited: () => boolean,
-) {
-  if (exited()) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    let done = false;
-    let forceTimer: ReturnType<typeof setTimeout> | undefined;
-    let lastTimer: ReturnType<typeof setTimeout> | undefined;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      if (forceTimer) clearTimeout(forceTimer);
-      if (lastTimer) clearTimeout(lastTimer);
-      resolve();
-    };
-    child.once("exit", finish);
-    killTree(child, "SIGTERM");
-    forceTimer = setTimeout(() => {
-      if (!exited()) killTree(child, "SIGKILL");
-    }, FORCE_KILL_AFTER_MS);
-    lastTimer = setTimeout(finish, FORCE_KILL_AFTER_MS + 500);
-  });
-}
 
 export const codexBackend: SubagentBackend = {
   name: "codex",

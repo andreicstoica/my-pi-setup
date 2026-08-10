@@ -15,12 +15,12 @@ Each subagent is headless, has its own context window, cannot see the parent con
 
 Always pass `model` and `reasoning_effort` explicitly. Omitting them inherits the parent's _current_ model — and because every `/model` pick and Ctrl+P cycle rewrites the global default, the parent may be on a cheap model without either of us having chosen it for this task. Never let a spawn inherit.
 
-Spawn `pi` subagents only on the `openai-codex` provider.
+Spawn `pi` subagents on the `openai-codex` provider, or on `opencode` (OpenCode Zen) for the non-OpenAI models it unlocks.
 
 - The `anthropic` provider has no credential here — the spawn fails. Anthropic models belong on the **`claude` harness**, which is covered by the Max subscription.
 - `openrouter` is authenticated but reserved for manual use. Do not spawn on it.
-- There is no `opencode` credential. That provider is OpenCode Zen (hosted, needs `OPENCODE_API_KEY`), not a local `opencode serve`.
-- Other CLIs (cursor-agent, opencode) are invoked by the user directly, never by you.
+- `opencode` is OpenCode Zen (hosted) and **is** authenticated. It is not the local `opencode` CLI, and it is not a subagent harness — it is a pi provider, reached as `opencode/<model-id>`. Only part of its catalogue is enabled on this account; see the table below.
+- Cursor is its own harness (`harness: "cursor"`), not a pi provider.
 
 Prefer `provider/model-id`; a bare model id only works when unambiguous.
 
@@ -29,6 +29,25 @@ Prefer `provider/model-id`; a bare model id only works when unambiguous.
 | `openai-codex/gpt-5.6-sol`   | coding                                 | `high`            |
 | `openai-codex/gpt-5.6-terra` | coding                                 | `medium`          |
 | `openai-codex/gpt-5.6-luna`  | cheap/mechanical passes; deep one-offs | `medium`, `xhigh` |
+
+### OpenCode Zen models (`opencode/…`)
+
+Most of the Zen catalogue returns `401 "Model is disabled"` on this account — **every** `claude-*`, `gpt-*`, and `gemini-*` id is disabled, so never route those through Zen (use `openai-codex` or the `claude` harness instead). These are the ids verified to actually run:
+
+| Model                    | $/Mtok in-out | Use for                                        |
+| ------------------------ | ------------- | ---------------------------------------------- |
+| `opencode/grok-4.5`      | 2 / 6         | the strongest Zen option; general + coding     |
+| `opencode/kimi-k3`       | 3 / 15        | long-form reasoning                            |
+| `opencode/deepseek-v4-pro` | 1.74 / 3.84 | coding                                         |
+| `opencode/glm-5.2`       | 1.4 / 4.4     | coding                                         |
+| `opencode/qwen3.6-plus`  | 0.5 / 3       | cheap general work                             |
+| `opencode/minimax-m3`    | 0.3 / 1.2     | cheap mechanical passes                        |
+| `opencode/deepseek-v4-flash` | 0.14 / 0.28 | cheapest metered option                       |
+| `opencode/big-pickle`    | free          | throwaway/experimental                         |
+
+Also free and working, but unproven for real work: `laguna-s-2.1-free`, `longcat-2.0-free`, `mimo-v2.5-free`, `nemotron-3-ultra-free`.
+
+Re-check availability by spawning a trivial prompt; a disabled model fails immediately with `401 Model is disabled` rather than burning a run.
 
 **Thinking budgets:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. These map directly to pi thinking levels.
 
@@ -50,17 +69,42 @@ Requires Claude Code to be installed and authenticated.
 
 **Harness:** `codex`
 **Prompt nicknames:** “codex”, “Codex CLI”, “codex agent”, “codex subagent”
-**Best default:** `gpt-5.6-sol` with `high` effort for coding work. Do not use anything other than sol unless the user specifically asks for it.
+**Best default for coding work:** `gpt-5.6-sol` at `high`. **For review/judgment work, start lower** — see the codex budget rule under "Scoping work to models"; the weekly cap is shared across every codex spawn, so a review that `terra` can settle should not be given to `sol`.
 
-| Model           | Recommended effort |
-| --------------- | ------------------ |
-| `gpt-5.6-sol`   | `high`             |
-| `gpt-5.6-terra` | `high`             |
-| `gpt-5.6-luna`  | `high`             |
+| Model           | Recommended effort | Reach for it when                                                      |
+| --------------- | ------------------ | ---------------------------------------------------------------------- |
+| `gpt-5.6-luna`  | `high`             | bounded diff, single-file check, recon, mechanical work                 |
+| `gpt-5.6-terra` | `high`             | a normal PR-sized review — the default review model                     |
+| `gpt-5.6-sol`   | `high`             | coding work, or a review where the call is hard or the blast radius big |
 
 **Thinking budgets accepted by the extension:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Codex maps these to the nearest effort supported by the selected model; `off`/`minimal` become `minimal`, while `max` becomes the highest extension-supported Codex effort.
 
 Requires the Codex CLI to be installed and authenticated.
+
+## Cursor Harness
+
+**Harness:** `cursor`
+**Prompt nicknames:** “cursor”, “cursor-agent”, “Cursor CLI”, “cursor agent”, “cursor subagent”
+**Best default:** `composer-2.5` — Cursor's own model, and the reason to pick this harness at all. Use `cursor-grok-4.5` only when the user asks for grok.
+
+**Cursor encodes reasoning effort and fast mode in the model id, not in flags.** There is no `--effort` and no `--fast`; `cursor-grok-4.5` on its own is not a real id. The extension resolves a family plus `reasoning_effort` into the real id, so pass the family and let it do that.
+
+| Model               | Effort tiers?          | Recommended effort | Resolves to                   |
+| ------------------- | ---------------------- | ------------------ | ----------------------------- |
+| `composer-2.5`      | no — effort is ignored | —                  | `composer-2.5`                |
+| `composer-2.5-fast` | no — effort is ignored | —                  | `composer-2.5-fast`           |
+| `cursor-grok-4.5`   | `low`/`medium`/`high`  | `high`             | `cursor-grok-4.5-high`        |
+| `cursor-grok-4.5-fast` | `low`/`medium`/`high` | `high`            | `cursor-grok-4.5-high-fast`   |
+
+**Fast mode is a `-fast` suffix on the `model` string** — there is no separate parameter. Append it to the family (`cursor-grok-4.5-fast`) or to a full id (`cursor-grok-4.5-low-fast`). Fast trades depth for latency; use it for mechanical passes, not for judgment.
+
+**Thinking budgets:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. For grok these collapse onto its three tiers — `off`/`minimal`/`low` → `low`, `medium` → `medium`, `high`/`xhigh`/`max` → `high`; omitting effort gives `medium`. Composer 2.5 has no tiers, so effort is accepted and ignored. An id that does not exist (e.g. `composer-2.5-high`) fails the spawn with the valid ids listed, rather than silently downgrading.
+
+`grok`, `grok-4.5`, and `composer` are accepted as shorthand. A full id is passed through unchanged, as is Cursor's bracket-override form (`'claude-opus-4-8[context=1m,effort=high,fast=false]'`).
+
+Requires the Cursor Agent CLI (`cursor-agent`) to be installed and logged in. Refresh the id table with `cursor-agent --list-models`.
+
+**No capability guard.** `policy.ts` — which denies MCP writes and mutating `aws` calls — is a Claude Agent SDK hook and **cannot reach a cursor child**; cursor-agent is a separate CLI with its own permission model, and it runs under `--force`. Same gap as the codex harness. Anything a cursor child must not do has to be stated in its prompt.
 
 ## Scoping work to models
 
@@ -73,8 +117,16 @@ Pick the model from the _task class_, and cap the task to what that class allows
 | **Scoped implementation** — one component or endpoint, behavior fully specified    | `openai-codex/gpt-5.6-sol`  | `high`   | ≤8 files; the prompt states the desired behavior, not just the goal      |
 | **Open-ended implementation** — match a design, wire a flow across FE+BE           | `claude` / `fable`          | `high`   | needs the 1M window; **never** sonnet/opus (200k) and never luna         |
 | **MCP-dependent** — Linear, Figma, Sentry, Liftoff prod                            | `claude` / `fable`          | `high`   | only harness with MCP; keep it to fetching + reporting, not implementing |
-| **Review / judgment** — is this right, what's risky, what's missing                | `claude` / `fable`          | `high`   | read-only; a reviewer that edits stops being a second opinion            |
+| **Review / judgment** — is this right, what's risky, what's missing                | `codex` — see budget rule   | `high`   | read-only; a reviewer that edits stops being a second opinion            |
 | **Deep single question** — one hard problem, no breadth                            | `openai-codex/gpt-5.6-luna` | `xhigh`  | one question; luna at xhigh is for depth, not for scope                  |
+
+**Discrete goals go to codex; open-ended goals go to claude.** This is the split behind the table. A discrete goal has a checkable answer — is this correct, what breaks, does this match the spec — and codex is the stronger backend for it across its whole range (`luna` → `terra` → `sol`). An open-ended goal has to be interpreted before it can be done — match this design, wire this flow, decide what "good" means here — and that is where `claude`, especially `fable`, wins. Review and judgment are discrete, so they are codex work now.
+
+**Codex has a hard usage budget — spend it deliberately.** It is a weekly subscription cap, not a per-call cost, so a burned budget blocks the reviews you have not thought of yet. Three rules:
+
+- **Scale the model to the review, not to the anxiety.** `luna` for a bounded diff or a single-file check, `terra` for a normal PR-sized review, `sol` only when the call is genuinely hard or the blast radius is large. Do not open at `sol`.
+- **One reviewer per question.** Do not fan out three codex reviewers over the same diff for consensus — that is 3× budget for a vote you did not need. If you want a second opinion on a codex verdict, take it from `claude`/`fable`; the disagreement between two different backends is worth more than agreement between two codex runs.
+- **Check the budget before a big fan-out.** `/usage` shows the codex weekly window. If it is already deep into the week's allowance, downgrade the model or route the review to `claude`/`fable` and say so, rather than silently spending the rest.
 
 Two rules that override the table:
 
@@ -93,11 +145,21 @@ Read /Users/acs/.pi/agent/skills/subagents/roles/<role>.md and follow it.
 | ------------- | ------------------------------------ | ------- |
 | `recon`       | mapping, tracing, locating prior art | no      |
 | `implementer` | any spawn that changes files         | yes     |
-| `reviewer`    | second opinion on a diff             | no      |
+
+**There is no `reviewer` role.** The repo's own `.agents/skills/review/SKILL.md` already carries the checklist, the generated-file exclusions, the ">80% confident" bar, "read the full file, not only the diff", and the output format. A role file duplicated all of it. Point the reviewer at the skill instead, and add the three things the skill does not say — because it is written for a review in a normal session, not for an autonomous child:
+
+```
+Read-only. You are a second opinion, not a second author. Do not edit, stage, or commit anything.
+Read .agents/skills/review/SKILL.md and follow its checklist and output format.
+Read the domain skills it references by path: .agents/skills/{backend-patterns,frontend-patterns,database,celery-tasks,test-conventions}/SKILL.md
+Check .claude/rules/ for path-specific rules (the tree only exists under .claude/, but its content is harness-neutral).
+```
+
+Name those paths every time. Review now runs on `codex`, and **codex does not discover `.agents/skills/` on its own** — claude and pi do. A codex reviewer that is only told "use the review skill" will not read it.
 
 The role carries the standing rules — scope discipline, lockfile and generated-file exclusions, which skills to read by path, verify-and-report shape, ">80% confident" for review. The prompt then carries only what is specific to _this_ task. That is what keeps a spawn prompt short without making it thin.
 
-Read-only is instruction-only here. `policy.ts` denies MCP writes and mutating `aws` globally, but pi cannot restrict tools per spawn the way Claude Code's `allowed-tools` does — so a `recon` or `reviewer` prompt must state "do not edit any file" in its own words too, and a role that was supposed to be read-only having touched files is a real failure worth reporting to the user.
+Read-only is instruction-only here. `policy.ts` denies MCP writes and mutating `aws` calls, but **only on the `claude` harness** — it is a Claude Agent SDK `PreToolUse` hook, so codex, cursor, and pi children are not covered by it at all. And even on claude, pi cannot restrict tools per spawn the way Claude Code's `allowed-tools` does. So a `recon` or review prompt must state "do not edit any file" in its own words, on every harness, and a role that was supposed to be read-only having touched files is a real failure worth reporting to the user.
 
 ## Prompt contract
 

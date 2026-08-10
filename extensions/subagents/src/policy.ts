@@ -22,6 +22,23 @@
  *
  * Both lists are deliberately *allow-list shaped* where the vocabulary is open
  * ended (aws has hundreds of verbs), and deny-list shaped where it is closed.
+ *
+ * COVERAGE — this only applies to the `claude` backend. `PreToolUse` is a
+ * Claude Agent SDK hook, and `backends/claude.ts` is the only caller of
+ * `evaluateToolUse`. The other harnesses are separate CLIs with their own
+ * permission models and no equivalent pre-tool callback on the protocols they
+ * expose:
+ *
+ * - codex   — `codex app-server`, spawned with `approvalPolicy: "never"` and
+ *             `sandbox: "danger-full-access"`.
+ * - cursor  — `cursor-agent -p`, spawned with `--force`; its stream-json output
+ *             is a one-way event feed, so a tool call can be *observed* but not
+ *             intercepted. Cursor's own allow/deny config is the only guard.
+ * - pi      — in-process child session; pi exposes no per-spawn tool policy.
+ *
+ * Do not describe this module as a global guard. For those harnesses the only
+ * real control is the spawn prompt, and read-only intent has to be written into
+ * it explicitly.
  */
 
 /**

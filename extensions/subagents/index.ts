@@ -57,6 +57,7 @@ import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
   API_FAILURE_ADVICE,
   buildSubagentResultMessage,
+  buildChildPrompt,
   buildSubagentSpawnResult,
   looksLikeApiFailure,
   SUBAGENT_CANCEL_PARAMETER_DESCRIPTIONS,
@@ -362,7 +363,7 @@ export default function (pi: ExtensionAPI) {
       const snap = await runTool(
         getRuntime(),
         manager.spawn(harness, {
-          prompt: params.prompt,
+          prompt: buildChildPrompt(params.prompt),
           title,
           cwd,
           model: params.model,

@@ -3,14 +3,14 @@
  *
  * Everything downstream of a backend (manager, tools, UI) speaks only these
  * types. Backends translate their native streams (pi session events, Claude
- * Agent SDK messages, Codex app-server JSON-RPC notifications) into the
- * normalized `SubagentEvent` union.
+ * Agent SDK messages, Codex app-server JSON-RPC notifications, cursor-agent
+ * stream-json event lines) into the normalized `SubagentEvent` union.
  */
 
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { Data } from "effect";
 
-export const BACKEND_NAMES = ["pi", "claude", "codex"] as const;
+export const BACKEND_NAMES = ["pi", "claude", "codex", "cursor"] as const;
 export type BackendName = (typeof BACKEND_NAMES)[number];
 
 /** Who initiated the session. User asides stay out of model-facing tooling. */
@@ -55,7 +55,9 @@ export interface SpawnTask {
   /**
    * Generic model hint, interpreted per backend:
    * pi: "provider/model-id" or bare model id; claude: model alias;
-   * codex: model slug. Omitted = backend default / inherit.
+   * codex: model slug; cursor: model id where effort and fast mode are id
+   * suffixes ("cursor-grok-4.5-high-fast").
+   * Omitted = backend default / inherit.
    */
   readonly model?: string;
   /** Shared effort scale; each backend maps it to its native equivalent. */
