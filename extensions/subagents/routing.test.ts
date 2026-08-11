@@ -16,6 +16,14 @@ test("a task class fills harness, model, and effort", () => {
   assert.match(routing.constraint ?? "", /Read-only/);
 });
 
+test("UI tweaks route to Luna Max", () => {
+  const routing = resolveRouting({ taskClass: "ui_tweak" });
+  assert.equal(routing.harness, "pi");
+  assert.equal(routing.model, "openai-codex/gpt-5.6-luna");
+  assert.equal(routing.reasoningEffort, "max");
+  assert.match(routing.constraint ?? "", /bounded UI tweak/);
+});
+
 test("explicit fields override the class field by field", () => {
   const routing = resolveRouting({
     taskClass: "review",

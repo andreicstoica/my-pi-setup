@@ -26,9 +26,9 @@ Prefer `provider/model-id`; a bare model id only works when unambiguous.
 
 | Model                        | Use for                                | Effort            |
 | ---------------------------- | -------------------------------------- | ----------------- |
-| `openai-codex/gpt-5.6-sol`   | coding                                 | `high`            |
+| `openai-codex/gpt-5.6-sol`   | difficult coding work                  | `high`            |
 | `openai-codex/gpt-5.6-terra` | coding                                 | `medium`          |
-| `openai-codex/gpt-5.6-luna`  | cheap/mechanical passes; deep one-offs | `medium`, `xhigh` |
+| `openai-codex/gpt-5.6-luna`  | cheap/mechanical passes; deep one-offs; bounded UI tweaks | `medium`, `xhigh`, `max` |
 
 ### OpenCode Zen models (`opencode/…`)
 
@@ -55,7 +55,7 @@ Re-check availability by spawning a trivial prompt; a disabled model fails immed
 
 **Harness:** `claude`
 **Prompt nicknames:** “claude”, “Claude Code”, “claude agent”, “claude subagent”, "cc"
-**Best default:** use the latest fable model on high reasoning. Do not default to anything else, if the user does not specify, use fable.
+**Use Fable selectively:** reserve it for vague guidance, decomposition, and plan orchestration. Use Luna Max for bounded UI tweaks. Do not default every implementation task to Fable.
 
 | Model hint | Model               | Recommended effort |
 | ---------- | ------------------- | ------------------ |
@@ -116,8 +116,9 @@ Pick the class from the _work_, and cap the task to what that class allows. A ch
 | ------------------------ | -------------------------------------------------------------- | ---------------------------------- | -------- | ------------------------------------------------------------------- |
 | `recon`                  | locate files, trace a flow, summarize prior art                | `pi` / `openai-codex/gpt-5.6-luna` | `medium` | read-only                                                           |
 | `mechanical_edit`        | apply a stated diff, rename, mirror a file, delete dead code   | `pi` / `openai-codex/gpt-5.6-luna` | `medium` | ≤3 files, all named in the prompt; zero design decisions left open  |
-| `scoped_implementation`  | one component or endpoint, behavior fully specified            | `pi` / `openai-codex/gpt-5.6-sol`  | `high`   | ≤8 files; behavior stated, not just the goal                        |
-| `open_implementation`    | match a design, wire a flow across FE+BE                       | `claude` / `fable`                 | `high`   | report the judgment calls made; needs the 1M window, never 200k     |
+| `scoped_implementation`  | one component or endpoint, behavior fully specified            | `pi` / `openai-codex/gpt-5.6-luna` | `max`    | ≤8 files; behavior stated, not just the goal                        |
+| `ui_tweak`               | bounded UI polish or interaction change                        | `pi` / `openai-codex/gpt-5.6-luna` | `max`    | ≤8 files; preserve existing patterns and tokens                     |
+| `open_implementation`    | vague guidance, decomposition, or plan orchestration           | `claude` / `fable`                 | `high`   | report discrete steps, open questions, and judgment calls            |
 | `mcp_dependent`          | Linear, Figma, Sentry, Liftoff prod                            | `claude` / `fable`                 | `high`   | fetch and report; no implementing, no MCP writes                    |
 | `review`                 | is this right, what's risky, what's missing                    | `codex` / `gpt-5.6-terra`          | `high`   | read-only, second opinion not second author, >80% confidence        |
 | `deep_question`          | one hard problem, no breadth                                   | `pi` / `openai-codex/gpt-5.6-luna` | `xhigh`  | read-only; answer the one question, do not broaden                  |
@@ -126,7 +127,7 @@ Pick the class from the _work_, and cap the task to what that class allows. A ch
 
 **The caps are still instruction-only.** The class writes them into the child's prompt so they no longer depend on you remembering to — but nothing inspects the child's diff. A `recon` child that edited a file is a real failure worth reporting to the user.
 
-**Discrete goals go to codex; open-ended goals go to claude.** This is the split behind the table. A discrete goal has a checkable answer — is this correct, what breaks, does this match the spec — and codex is the stronger backend for it across its whole range (`luna` → `terra` → `sol`). An open-ended goal has to be interpreted before it can be done — match this design, wire this flow, decide what "good" means here — and that is where `claude`, especially `fable`, wins. Review and judgment are discrete, so they are codex work now.
+**Bounded UI work goes to Luna Max.** Use `ui_tweak` for UI polish and interaction changes with a clear target. Use `open_implementation` with Fable only when the goal needs interpretation, decomposition, or plan orchestration before implementation. Discrete review work remains Codex work.
 
 **Codex has a hard usage budget — spend it deliberately.** It is a weekly subscription cap, not a per-call cost, so a burned budget blocks the reviews you have not thought of yet. Three rules:
 

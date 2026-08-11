@@ -71,21 +71,30 @@ export const TASK_CLASSES = {
   },
   scoped_implementation: {
     harness: "pi",
-    model: "openai-codex/gpt-5.6-sol",
-    reasoningEffort: "high",
+    model: "openai-codex/gpt-5.6-luna",
+    reasoningEffort: "max",
     summary:
-      "one component or endpoint whose behavior is fully specified here; at most 8 files",
+      "one component or endpoint whose behavior is fully specified here; at most 8 files; Luna Max",
     constraint:
       "Scope: at most 8 files. The behavior you must produce is stated in this prompt — build that, not a more general version of it. If the prompt states a goal but not the behavior, report the ambiguity instead of resolving it.",
+  },
+  ui_tweak: {
+    harness: "pi",
+    model: "openai-codex/gpt-5.6-luna",
+    reasoningEffort: "max",
+    summary:
+      "bounded UI polish or interaction tweak; use Luna Max, not Fable; at most 8 files",
+    constraint:
+      "Scope: this is a bounded UI tweak. At most 8 files. Preserve existing patterns and tokens. Do not expand the task into a redesign; if the requested behavior is unclear, stop and report the ambiguity.",
   },
   open_implementation: {
     harness: "claude",
     model: "fable",
     reasoningEffort: "high",
     summary:
-      "interpretive work — match a design, wire a flow across frontend and backend; needs the 1M context window",
+      "vague, interpretive guidance or planning that needs Fable; use Luna Max for bounded UI implementation",
     constraint:
-      "Report which files you changed and which judgment calls you made, so they can be reviewed as decisions rather than found later as diffs.",
+      "Use Fable for guidance, decomposition, and plan orchestration when the goal is still ambiguous. Do not use this class for a bounded UI tweak. Report the discrete steps, open questions, and judgment calls.",
   },
   mcp_dependent: {
     harness: "claude",
