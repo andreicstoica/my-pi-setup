@@ -39,7 +39,22 @@
  * Do not describe this module as a global guard. For those harnesses the only
  * real control is the spawn prompt, and read-only intent has to be written into
  * it explicitly.
+ *
+ * The destructive-command rules themselves live in
+ * `shared/destructive-commands.ts` because this session's own `bash` calls need
+ * the same detection (see the `bash-guard` extension). Only the verdict differs:
+ * a child is denied outright, this session gets a confirmation prompt.
  */
+
+import {
+  COMMAND_SEPARATOR,
+  basename,
+  findDestructiveCommand,
+  tokenizeSegment,
+  unquote,
+} from "../../shared/destructive-commands.ts";
+
+export { findDestructiveCommand };
 
 /**
  * MCP servers whose write tools are refused. Matched against the server
@@ -96,36 +111,6 @@ const AWS_READ_ONLY_EXTRAS: ReadonlySet<string> = new Set([
   "wait",
 ]);
 
-// Shell metacharacters that start a new command. Splitting on these means an
-// `aws` call hidden behind `&&`, `;`, a pipe, or a subshell is still inspected
-// rather than only the first word of the whole string.
-const COMMAND_SEPARATOR = /(?:\|\||&&|[;\n|&()])+/;
-
-// Leading `VAR=value` assignments and wrappers that delegate to another
-// command; the real executable is whatever follows them.
-const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-const PASSTHROUGH_WRAPPERS = new Set([
-  "sudo",
-  "env",
-  "command",
-  "nice",
-  "nohup",
-  "time",
-  "xargs",
-]);
-
-/** Strip quotes so `"aws"` and `'aws'` are recognised as the executable. */
-function unquote(token: string) {
-  return token.replace(/^['"]|['"]$/g, "");
-}
-
-/** Basename, so `/usr/local/bin/aws` matches but `awslogs` does not. */
-function basename(token: string) {
-  const cleaned = unquote(token);
-  const slash = cleaned.lastIndexOf("/");
-  return slash === -1 ? cleaned : cleaned.slice(slash + 1);
-}
-
 /**
  * Extracts the aws invocations in a shell command as argument lists. Returns
  * an empty array when the command does not call aws at all.
@@ -134,21 +119,7 @@ export function findAwsInvocations(command: string) {
   const found: string[][] = [];
 
   for (const segment of command.split(COMMAND_SEPARATOR)) {
-    let tokens = segment.trim().split(/\s+/).filter(Boolean);
-
-    // Peel env assignments and wrappers until the real executable is in front.
-    while (tokens.length > 0) {
-      const head = tokens[0]!;
-      if (
-        ENV_ASSIGNMENT.test(head) ||
-        PASSTHROUGH_WRAPPERS.has(basename(head))
-      ) {
-        tokens = tokens.slice(1);
-        continue;
-      }
-      break;
-    }
-
+    const tokens = tokenizeSegment(segment);
     if (tokens.length === 0) continue;
     if (basename(tokens[0]!) !== "aws") continue;
     found.push(tokens.slice(1).map(unquote));
@@ -183,61 +154,6 @@ export function classifyAwsInvocation(args: readonly string[]) {
   }
 
   return `aws ${positional[0]} ${operation} is not a read-only operation`;
-}
-
-/**
- * Destructive shell commands no unattended child may run. A real incident
- * motivates this: a script that drop/recreated a newline-joined DB list wiped
- * the local `liftoff` database (2026-07-30). Database destruction, force
- * pushes to the trunk, and rm -rf aimed at a home/root path are never part of
- * a delegated task; a human runs those.
- */
-export function findDestructiveCommand(command: string): string | undefined {
-  for (const segment of command.split(COMMAND_SEPARATOR)) {
-    const tokens = segment.trim().split(/\s+/).filter(Boolean);
-    if (tokens.length === 0) continue;
-    const executable = basename(tokens[0]!);
-
-    if (executable === "dropdb") return "dropdb deletes a database";
-
-    // SQL scanning is gated on a psql invocation so prose mentioning DROP
-    // TABLE (commit messages, echo) is not a false positive.
-    if (executable === "psql") {
-      const sql = segment;
-      if (/\bdrop\s+(database|schema|table)\b/i.test(sql)) {
-        return "psql DROP DATABASE/SCHEMA/TABLE";
-      }
-      if (/\btruncate\s/i.test(sql)) return "psql TRUNCATE";
-      if (/\bdelete\s+from\b(?![^;]*\bwhere\b)/i.test(sql)) {
-        return "psql DELETE without a WHERE clause";
-      }
-    }
-
-    if (executable === "git" && tokens[1] === "push") {
-      const force = tokens.some(
-        (t) => t === "--force" || t === "-f" || /^-[a-z]*f/.test(t),
-      );
-      const trunk = tokens.some((t) =>
-        /^(master|main)$/.test(unquote(t).replace(/^.*:/, "")),
-      );
-      if (force && trunk) return "force push to master/main";
-    }
-
-    if (executable === "rm" && tokens.some((t) => /^-[a-z]*r/i.test(t))) {
-      const targets = tokens
-        .slice(1)
-        .filter((t) => !t.startsWith("-"))
-        .map(unquote);
-      if (
-        targets.some(
-          (t) => t === "/" || t === "~" || t === "$HOME" || t.startsWith("../"),
-        )
-      ) {
-        return "recursive rm aimed at root, home, or outside the working tree";
-      }
-    }
-  }
-  return undefined;
 }
 
 /**

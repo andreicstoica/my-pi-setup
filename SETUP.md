@@ -23,6 +23,17 @@ NOTE: if you are an agent, at this step ask the user if they want to use firecra
 
 The `file-search` extension registers `fd` and `rg` as model tools. No setup is normally needed: at startup it silently uses a system-installed `fd` (or `fdfind` on Debian/Ubuntu) and `rg` when available, or an existing fallback binary in `~/.pi/agent/bin/`. Only when neither exists does it download an official release binary (macOS/Linux, arm64/x64, over HTTPS) into `~/.pi/agent/bin/` and show a one-time notification. If your platform is unsupported, install `fd` and `rg` with your package manager and restart pi.
 
+## Packages
+
+`settings.json` is gitignored, so installed packages do not come with a clone. Reinstall them:
+
+```sh
+pi install npm:pi-paster
+pi install git:github.com/algal/pi-openai-server-compaction
+```
+
+`pi-openai-server-compaction` gives OpenAI models Codex-style server-side compaction, keeping both the OpenAI opaque artifact and a portable text summary, so forks and exports still work. Its `package.json` still pins pi `>=0.80.9 <0.81.0`; the pin is stale, and it is live-tested against 0.84.1 on `openai-codex/*`.
+
 ## Theme
 
 Add the included theme to `~/.pi/agent/settings.json` while keeping your existing settings:
