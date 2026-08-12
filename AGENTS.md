@@ -12,6 +12,10 @@ Relax all of this when I ask for a real explanation, when confirming a destructi
 
 When asking questions, ask them one at a time.
 
+## Git and PR writing
+
+For commit or PR writing, invoke the `git-writing` skill. Follow repository templates and local rules first.
+
 ## Delegation
 
 You orchestrate. Spawn subagents for work that is self-contained. Set `task_class` and let it pick the harness, model, and effort — read the `subagents` skill when no class fits, when you mean to override a field, or before any fan-out.
