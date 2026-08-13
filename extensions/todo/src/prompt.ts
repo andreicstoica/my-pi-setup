@@ -12,6 +12,7 @@
  */
 
 import {
+  isBlocked,
   isOpen,
   openItems,
   type Todo,
@@ -116,12 +117,7 @@ export function summarize(state: TodoState): string {
   const total = state.items.filter((t) => t.status !== "cancelled").length;
   const running = state.items.filter((t) => t.status === "in_progress").length;
   const blocked = state.items.filter(
-    (t) =>
-      isOpen(t) &&
-      t.blockedBy.some((id) => {
-        const dep = state.items.find((d) => d.id === id);
-        return dep ? isOpen(dep) : false;
-      }),
+    (t) => isOpen(t) && isBlocked(t, state.items),
   ).length;
 
   const parts = [`${done}/${total} done`];

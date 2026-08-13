@@ -74,6 +74,20 @@ export const inProgress = (state: TodoState) =>
 export const openItems = (state: TodoState) => state.items.filter(isOpen);
 
 /**
+ * The dependencies actually holding this item back. A finished dependency
+ * stops blocking, and an unknown id never blocks — it is reported as a warning
+ * instead, so a typo cannot wedge an item as permanently unstartable.
+ */
+export const blockingIds = (todo: Todo, items: Todo[]) =>
+  todo.blockedBy.filter((id) => {
+    const dep = items.find((t) => t.id === id);
+    return dep ? isOpen(dep) : false;
+  });
+
+export const isBlocked = (todo: Todo, items: Todo[]) =>
+  blockingIds(todo, items).length > 0;
+
+/**
  * Fold one mutation into the state. Never throws: bad input becomes a warning
  * so a malformed tool call degrades into feedback rather than a hard failure.
  */
@@ -119,10 +133,7 @@ export function applyMutation(
       );
     }
     if (patch.status === "in_progress" || patch.status === "completed") {
-      const blockers = todo.blockedBy.filter((id) => {
-        const dep = items.find((t) => t.id === id);
-        return dep ? isOpen(dep) : false;
-      });
+      const blockers = blockingIds(todo, items);
       if (blockers.length > 0)
         warnings.push(
           `todo ${todo.id} ${
