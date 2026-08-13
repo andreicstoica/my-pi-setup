@@ -50,7 +50,11 @@ export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
  */
 export const CHILD_REPORT_CONTRACT =
   "---\n" +
-  "Report contract: your final message IS the result handed to the orchestrator, which cannot see this transcript. Lead with the answer — no preamble, no narration of the steps you took. Give concrete file paths, symbols, and commands rather than descriptions of them. State plainly anything you could not verify, could not do, or deliberately left undone; a gap you name is useful, a gap you omit is a bug. If you were asked a question, answer it in the first sentence.";
+  "Report contract: your final message IS the result handed to the orchestrator, which cannot see this transcript. Lead with the answer — no preamble, no narration of the steps you took. Give concrete file paths, symbols, and commands rather than descriptions of them. State plainly anything you could not verify, could not do, or deliberately left undone; a gap you name is useful, a gap you omit is a bug. If you were asked a question, answer it in the first sentence.\n" +
+  // No harness compacts a subagent: a child that fills its window is killed and
+  // returns nothing at all, losing every finding it had already made. Nothing in
+  // the tool layer can prevent that, so the child is asked to land early instead.
+  "Context: you will not be compacted. If you notice your context filling, stop exploring and report what you have, marked as partial with the specific next step named — a partial report is useful, a run that dies full is worth nothing.";
 
 /**
  * Composes the model-authored task prompt with the task class's constraint (if
@@ -154,7 +158,7 @@ export const SUBAGENT_LIST_TOOL_DESCRIPTION =
  * that does not.
  */
 export const SUBAGENT_SEND_TOOL_DESCRIPTION =
-  "Send a follow-up message into a subagent that already exists, reusing its context instead of paying for a fresh spawn. Two uses only: (1) a settled subagent whose report is nearly right — ask for the missing piece; (2) a running subagent you can see is drifting — correct it. NOT a chat channel: do not send progress questions, acknowledgements, or anything subagent_check already answers. If the child's context is wrong rather than incomplete, cancel it and spawn a better prompt instead. Sending to a settled subagent starts a fresh run and occupies one of the 4 concurrent slots; its new output is delivered to you automatically.";
+  "Send a follow-up message into a subagent that already exists, reusing its context instead of paying for a fresh spawn. Two uses only: (1) a settled subagent whose report is nearly right — ask for the missing piece; (2) a running subagent you can see is drifting — correct it. NOT a chat channel: do not send progress questions, acknowledgements, or anything subagent_check already answers. If the child's context is wrong rather than incomplete, cancel it and spawn a better prompt instead. Sending to a settled subagent starts a fresh run and occupies a concurrent slot; its new output is delivered to you automatically.";
 
 /** Model-facing schema descriptions for subagent_send. */
 export const SUBAGENT_SEND_PARAMETER_DESCRIPTIONS = {

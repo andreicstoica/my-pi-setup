@@ -54,47 +54,55 @@ const READ_ONLY =
  */
 export const TASK_CLASSES = {
   recon: {
-    harness: "pi",
-    model: "openai-codex/gpt-5.6-luna",
-    reasoningEffort: "medium",
+    harness: "cursor",
+    model: "cursor-grok-4.6-fast",
+    reasoningEffort: "high",
     summary: "locate files, trace a flow, or summarize prior art; read-only",
     constraint: READ_ONLY,
   },
-  mechanical_edit: {
+  bulk_scan: {
     harness: "pi",
-    model: "openai-codex/gpt-5.6-luna",
+    model: "opencode/deepseek-v4-flash",
     reasoningEffort: "medium",
+    summary:
+      "one slice of a wide fan-out — the same narrow question asked of many files or dirs; read-only, metered per token so keep the slice small",
+    constraint: `${READ_ONLY} You are one slice of a wider sweep. Answer only for the paths named in this prompt and do not widen the search; another child covers the rest. Report findings as a short list with file:line, not prose.`,
+  },
+  mechanical_edit: {
+    harness: "cursor",
+    model: "cursor-grok-4.6-fast",
+    reasoningEffort: "high",
     summary:
       "apply a stated diff, rename, mirror a file, or delete dead code; at most 3 named files and no open design decisions",
     constraint:
       "Scope: at most 3 files, and only files named in this prompt. Every decision is already made here — if you find one that is not, stop and report it rather than deciding it yourself.",
   },
   scoped_implementation: {
-    harness: "pi",
-    model: "openai-codex/gpt-5.6-luna",
-    reasoningEffort: "max",
+    harness: "cursor",
+    model: "cursor-grok-4.6",
+    reasoningEffort: "xhigh",
     summary:
-      "one component or endpoint whose behavior is fully specified here; at most 8 files; Luna Max",
+      "one component or endpoint whose behavior is fully specified here; at most 8 files",
     constraint:
       "Scope: at most 8 files. The behavior you must produce is stated in this prompt — build that, not a more general version of it. If the prompt states a goal but not the behavior, report the ambiguity instead of resolving it.",
   },
   ui_tweak: {
-    harness: "pi",
-    model: "openai-codex/gpt-5.6-luna",
-    reasoningEffort: "max",
+    harness: "claude",
+    model: "opus",
+    reasoningEffort: "high",
     summary:
-      "bounded UI polish or interaction tweak; use Luna Max, not Fable; at most 8 files",
+      "frontend, visual, or interaction work — UI polish, animation, layout; Opus, and the Max plan pays for it; at most 8 files",
     constraint:
-      "Scope: this is a bounded UI tweak. At most 8 files. Preserve existing patterns and tokens. Do not expand the task into a redesign; if the requested behavior is unclear, stop and report the ambiguity.",
+      "Scope: this is bounded frontend work. At most 8 files. Preserve existing patterns and design tokens — never introduce a magic color or spacing value. Do not expand the task into a redesign; if the requested behavior is unclear, stop and report the ambiguity.",
   },
   open_implementation: {
     harness: "claude",
     model: "fable",
     reasoningEffort: "high",
     summary:
-      "vague, interpretive guidance or planning that needs Fable; use Luna Max for bounded UI implementation",
+      "vague, interpretive guidance or planning that needs Fable; use ui_tweak for frontend work and scoped_implementation once behavior is specified",
     constraint:
-      "Use Fable for guidance, decomposition, and plan orchestration when the goal is still ambiguous. Do not use this class for a bounded UI tweak. Report the discrete steps, open questions, and judgment calls.",
+      "Use Fable for guidance, decomposition, and plan orchestration when the goal is still ambiguous. Do not use this class for bounded frontend work. Report the discrete steps, open questions, and judgment calls.",
   },
   mcp_dependent: {
     harness: "claude",

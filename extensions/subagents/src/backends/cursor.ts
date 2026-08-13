@@ -75,10 +75,10 @@ function resolveCursorBinary() {
 
 /**
  * Cursor encodes BOTH reasoning effort and fast mode in the model id — there is
- * no `--effort` and no `--fast` flag. `cursor-grok-4.5` alone is NOT a real id
- * (passing it fails); the tiers are `-low` / `-medium` / `-high`, each with an
- * optional `-fast` twin. Composer 2.5 has no tiers at all, only `composer-2.5`
- * and `composer-2.5-fast`.
+ * no `--effort` and no `--fast` flag. `cursor-grok-4.6` alone is NOT a real id
+ * (passing it fails); the tiers are `-low` / `-medium` / `-high` / `-xhigh`,
+ * each with an optional `-fast` twin. Composer 2.5 has no tiers at all, only
+ * `composer-2.5` and `composer-2.5-fast`.
  *
  * Refresh this table with `cursor-agent --list-models`. It is only the fallback:
  * `spawn` probes the live list first and validates against that when it answers.
@@ -90,10 +90,14 @@ function resolveCursorBinary() {
 const KNOWN_CURSOR_MODELS: ReadonlyArray<string> = [
   "composer-2.5",
   "composer-2.5-fast",
-  "cursor-grok-4.5-low",
-  "cursor-grok-4.5-low-fast",
-  "cursor-grok-4.5-medium",
-  "cursor-grok-4.5-medium-fast",
+  "cursor-grok-4.6-low",
+  "cursor-grok-4.6-low-fast",
+  "cursor-grok-4.6-medium",
+  "cursor-grok-4.6-medium-fast",
+  "cursor-grok-4.6-high",
+  "cursor-grok-4.6-high-fast",
+  "cursor-grok-4.6-xhigh",
+  "cursor-grok-4.6-xhigh-fast",
   "cursor-grok-4.5-high",
   "cursor-grok-4.5-high-fast",
 ];
@@ -109,22 +113,36 @@ const CURSOR_EFFORT_FAMILIES: ReadonlyMap<
   string,
   { readonly tiers: ReadonlyArray<string>; readonly fallback: string }
 > = new Map([
-  ["cursor-grok-4.5", { tiers: ["low", "medium", "high"], fallback: "medium" }],
+  [
+    "cursor-grok-4.6",
+    { tiers: ["low", "medium", "high", "xhigh"], fallback: "medium" },
+  ],
+  // 4.6 superseded 4.5, and cursor dropped 4.5's lower tiers with it: the live
+  // list now offers `high` only. Kept so an explicit 4.5 request still resolves.
+  ["cursor-grok-4.5", { tiers: ["high"], fallback: "high" }],
 ]);
 
 /** Shorthands the model is likely to write, mapped to the canonical family. */
 const CURSOR_FAMILY_ALIASES: ReadonlyMap<string, string> = new Map([
-  ["grok", "cursor-grok-4.5"],
+  // Bare "grok" means the current generation, not the one this file was written against.
+  ["grok", "cursor-grok-4.6"],
+  ["grok-4.6", "cursor-grok-4.6"],
+  ["grok4.6", "cursor-grok-4.6"],
+  ["cursor-grok", "cursor-grok-4.6"],
+  ["cursor-grok-4.6", "cursor-grok-4.6"],
   ["grok-4.5", "cursor-grok-4.5"],
   ["grok4.5", "cursor-grok-4.5"],
-  ["cursor-grok", "cursor-grok-4.5"],
   ["cursor-grok-4.5", "cursor-grok-4.5"],
   ["composer", "composer-2.5"],
   ["composer-2.5", "composer-2.5"],
   ["composer2.5", "composer-2.5"],
 ]);
 
-/** The shared 7-point scale collapsed onto grok's three tiers. */
+/**
+ * The shared 7-point scale mapped onto the tier vocabulary cursor's grok ids
+ * use. `max` has no id of its own, so it asks for the top tier the family
+ * offers.
+ */
 function cursorTier(effort: ReasoningEffort | undefined) {
   switch (effort) {
     case "off":
@@ -134,12 +152,38 @@ function cursorTier(effort: ReasoningEffort | undefined) {
     case "medium":
       return "medium";
     case "high":
+      return "high";
     case "xhigh":
     case "max":
-      return "high";
+      return "xhigh";
     case undefined:
       return undefined;
   }
+}
+
+/**
+ * Tier order, strongest last. Used to walk a requested tier down to one the
+ * family actually has, so `max` on a family whose top tier is `high` resolves
+ * instead of failing — an effort the caller inherited should never break a
+ * spawn. An explicitly *spelled* tier still fails, because that is a real
+ * mistake about which ids exist.
+ */
+const TIER_ORDER = ["low", "medium", "high", "xhigh"] as const;
+
+function nearestTier(desired: string, tiers: ReadonlyArray<string>) {
+  if (tiers.includes(desired)) return desired;
+  const wanted = TIER_ORDER.indexOf(desired as (typeof TIER_ORDER)[number]);
+  if (wanted < 0) return undefined;
+  // Down first — a weaker tier is the safer miss when a caller asked for depth
+  // the family cannot give. Then up, because a family that kept only its top
+  // tier (4.5 today) must still accept an inherited low effort.
+  for (let i = wanted; i >= 0; i--) {
+    if (tiers.includes(TIER_ORDER[i])) return TIER_ORDER[i];
+  }
+  for (let i = wanted; i < TIER_ORDER.length; i++) {
+    if (tiers.includes(TIER_ORDER[i])) return TIER_ORDER[i];
+  }
+  return undefined;
 }
 
 export class CursorModelError extends Error {}
@@ -213,10 +257,13 @@ export function resolveCursorModel(
     }
     resolved = family;
   } else {
-    const tier = explicitTier ?? cursorTier(effort) ?? tiers.fallback;
-    if (!tiers.tiers.includes(tier)) {
+    const desired = explicitTier ?? cursorTier(effort) ?? tiers.fallback;
+    // An inherited effort walks down to the family's top tier; a hand-spelled
+    // tier must exist, so it is checked as written.
+    const tier = explicitTier ? desired : nearestTier(desired, tiers.tiers);
+    if (!tier || !tiers.tiers.includes(tier)) {
       throw new CursorModelError(
-        `Cursor model "${family}" has no "${tier}" tier (available: ${tiers.tiers.join(", ")}). Valid ids: ${knownModelsMessage(known)}.`,
+        `Cursor model "${family}" has no "${desired}" tier (available: ${tiers.tiers.join(", ")}). Valid ids: ${knownModelsMessage(known)}.`,
       );
     }
     resolved = `${family}-${tier}`;

@@ -14,11 +14,16 @@ import { piBackend } from "./src/backends/pi.ts";
 import { makeStubBackend } from "./src/backends/stub.ts";
 import type { BackendName, ParentContext, SpawnTask } from "./src/domain.ts";
 import {
+  MAX_RUNNING,
   SubagentManager,
   SubagentManagerLive,
   type SubagentManagerShape,
 } from "./src/manager.ts";
 import { runTool } from "./src/runtime.ts";
+
+/** 1..MAX_RUNNING — so the cap tests follow the constant instead of a literal. */
+const FULL_SLATE = Array.from({ length: MAX_RUNNING }, (_, i) => i + 1);
+const CAP_MESSAGE = new RegExp(`Max ${MAX_RUNNING} subagents`);
 
 const TestRegistryLive = Layer.sync(BackendRegistry, () => {
   const backends: SubagentBackend[] = [
@@ -206,9 +211,7 @@ test("the global concurrency cap includes by-the-way sessions", async () => {
   await withManager(async (manager, runtime) => {
     const tasks: SpawnTask[] = [
       { ...task("side question"), origin: "btw" },
-      task("Task 2"),
-      task("Task 3"),
-      task("Task 4"),
+      ...FULL_SLATE.slice(1).map((n) => task(`Task ${n}`)),
     ];
     const spawns = await runTool(
       runtime,
@@ -216,7 +219,7 @@ test("the global concurrency cap includes by-the-way sessions", async () => {
         concurrency: "unbounded",
       }),
     );
-    assert.equal(spawns.length, 4);
+    assert.equal(spawns.length, MAX_RUNNING);
     await assert.rejects(
       runTool(
         runtime,
@@ -225,25 +228,25 @@ test("the global concurrency cap includes by-the-way sessions", async () => {
           origin: "btw",
         }),
       ),
-      /Max 4 subagents/,
+      CAP_MESSAGE,
     );
   });
 });
 
-test("the concurrency cap rejects a fifth running subagent", async () => {
+test("the concurrency cap rejects one subagent past the limit", async () => {
   await withManager(async (manager, runtime) => {
     const spawns = await runTool(
       runtime,
       Effect.forEach(
-        [1, 2, 3, 4],
+        FULL_SLATE,
         (n) => manager.spawn("codex", task(`Task ${n}`)),
         { concurrency: "unbounded" },
       ),
     );
-    assert.equal(spawns.length, 4);
+    assert.equal(spawns.length, MAX_RUNNING);
     await assert.rejects(
-      runTool(runtime, manager.spawn("codex", task("Task 5"))),
-      /Max 4 subagents/,
+      runTool(runtime, manager.spawn("codex", task("one too many"))),
+      CAP_MESSAGE,
     );
   });
 });
@@ -262,7 +265,7 @@ test("pi spawn fails fast without the parent model registry", async () => {
 
 test("idle restarts respect the concurrency cap", async () => {
   await withManager(async (manager, runtime) => {
-    // Settle one subagent, then fill all four slots with running ones.
+    // Settle one subagent, then fill every slot with running ones.
     const settled = await runTool(
       runtime,
       manager.spawn("claude", task("early finisher")),
@@ -271,15 +274,15 @@ test("idle restarts respect the concurrency cap", async () => {
     await runTool(
       runtime,
       Effect.forEach(
-        [1, 2, 3, 4],
+        FULL_SLATE,
         (n) => manager.spawn("codex", task(`Task ${n}`)),
         { concurrency: "unbounded" },
       ),
     );
-    // Restarting the settled one would be a fifth concurrent run.
+    // Restarting the settled one would exceed the cap.
     await assert.rejects(
       runTool(runtime, manager.send(settled.id, "go again")),
-      /Max 4 subagents/,
+      CAP_MESSAGE,
     );
     assert.equal(manager.view.get(settled.id)?.status, "done");
   });

@@ -16,12 +16,30 @@ test("a task class fills harness, model, and effort", () => {
   assert.match(routing.constraint ?? "", /Read-only/);
 });
 
-test("UI tweaks route to Luna Max", () => {
+test("frontend work routes to Opus on the claude harness", () => {
   const routing = resolveRouting({ taskClass: "ui_tweak" });
-  assert.equal(routing.harness, "pi");
-  assert.equal(routing.model, "openai-codex/gpt-5.6-luna");
-  assert.equal(routing.reasoningEffort, "max");
-  assert.match(routing.constraint ?? "", /bounded UI tweak/);
+  assert.equal(routing.harness, "claude");
+  assert.equal(routing.model, "opus");
+  assert.equal(routing.reasoningEffort, "high");
+  assert.match(routing.constraint ?? "", /bounded frontend work/);
+});
+
+test("read and mechanical classes stay off the Codex weekly cap", () => {
+  // The point of the cheap classes: none of them may route to the codex harness
+  // or to an openai-codex model, because that pool is shared with `review`.
+  for (const name of [
+    "recon",
+    "bulk_scan",
+    "mechanical_edit",
+    "scoped_implementation",
+  ] as const) {
+    const entry = TASK_CLASSES[name];
+    assert.notEqual(entry.harness, "codex", `${name} spends the codex cap`);
+    assert.ok(
+      !(entry.model ?? "").startsWith("openai-codex/"),
+      `${name} spends the codex cap via a pi provider`,
+    );
+  }
 });
 
 test("explicit fields override the class field by field", () => {
@@ -36,20 +54,20 @@ test("explicit fields override the class field by field", () => {
 });
 
 test("overriding the harness drops the class model rather than mismatching it", () => {
-  // "openai-codex/gpt-5.6-luna" is a pi provider/model string; handing it to
-  // the claude harness would fail the spawn or silently pick something else.
+  // "cursor-grok-4.6-fast" is a cursor id; handing it to the claude harness
+  // would fail the spawn or silently pick something else.
   const routing = resolveRouting({ taskClass: "recon", harness: "claude" });
   assert.equal(routing.harness, "claude");
   assert.equal(routing.model, undefined);
   // Effort and the read-only constraint still apply — only the model was
   // harness-specific.
-  assert.equal(routing.reasoningEffort, "medium");
+  assert.equal(routing.reasoningEffort, "high");
   assert.match(routing.constraint ?? "", /Read-only/);
 });
 
 test("an overriding harness keeps the class model when it is the same harness", () => {
-  const routing = resolveRouting({ taskClass: "recon", harness: "pi" });
-  assert.equal(routing.model, "openai-codex/gpt-5.6-luna");
+  const routing = resolveRouting({ taskClass: "bulk_scan", harness: "pi" });
+  assert.equal(routing.model, "opencode/deepseek-v4-flash");
 });
 
 test("no class leaves every field to the caller", () => {

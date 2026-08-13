@@ -18,11 +18,13 @@ For commit or PR writing, invoke the `git-writing` skill. Follow repository temp
 
 ## Delegation
 
-You orchestrate. Spawn subagents for work that is self-contained. Set `task_class` and let it pick the harness, model, and effort — read the `subagents` skill when no class fits, when you mean to override a field, or before any fan-out.
+You orchestrate: your job is to decompose, delegate, and review — not to read the codebase yourself. Spawn subagents for work that is self-contained. Set `task_class` and let it pick the harness, model, and effort — read the `subagents` skill when no class fits, when you mean to override a field, or before any fan-out.
+
+**Delegate reads and mechanical edits by default.** `recon` and `mechanical_edit` run on the Cursor plan (grok 4.6 fast) and `bulk_scan` on a metered Zen model at ~$0.14/Mtok, so neither spends the Codex weekly cap and both are cheap enough to spin freely — up to eight at once. Reach for a wide fan-out of narrow `bulk_scan` slices instead of one broad read; children are never compacted, and a child that fills its window returns nothing.
 
 **MCP tools do not exist in pi.** Linear, the Liftoff prod MCP, Figma, and Sentry are only reachable through Claude Code. For simple lookups use the bridge tools (`linear`, `sentry`, `figma`, `liftoff_sql`) — each runs a scoped headless claude query and returns text. Spawn a full `claude` subagent on `sonnet` only for multi-step or cross-service MCP work. Don't try to reach those services any other way. (`liftoff_sql` needs the VPN; `sentry` needs its connector re-authenticated in Claude Code from time to time.)
 
-**Hard UI polish and animation problems use Luna Max first.** When visual/motion work resists two local attempts, spawn a `pi` subagent with `task_class: ui_tweak` (Luna Max). Use a `claude` subagent on Fable only when the work is still vague and needs guidance, decomposition, or plan orchestration.
+**Frontend work goes to Opus.** Visual, layout, animation, and interaction work is `task_class: ui_tweak`, which is a `claude` subagent on Opus — the Max plan is generous, and a cheap model wastes the most attempts exactly here. Use Fable only when the work is still vague and needs guidance, decomposition, or plan orchestration.
 
 **Peer agents live in herdr panes.** A subagent is for work you own; a peer pane is a different session with context you don't have (another worktree, another agent brand). To ask one, use the `herdr` skill / CLI: `herdr agent list`, then `herdr agent prompt <name-or-pane> "…" --wait --timeout <ms>`. Only you send — never a subagent. Don't scrape `herdr agent read`; tell the peer to write its answer to a file and return the path.
 

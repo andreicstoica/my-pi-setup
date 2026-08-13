@@ -42,7 +42,7 @@ Most of the Zen catalogue returns `401 "Model is disabled"` on this account — 
 | `opencode/glm-5.2`       | 1.4 / 4.4     | coding                                         |
 | `opencode/qwen3.6-plus`  | 0.5 / 3       | cheap general work                             |
 | `opencode/minimax-m3`    | 0.3 / 1.2     | cheap mechanical passes                        |
-| `opencode/deepseek-v4-flash` | 0.14 / 0.28 | cheapest metered option                       |
+| `opencode/deepseek-v4-flash` | 0.14 / 0.28 | cheapest metered option — the `bulk_scan` model |
 | `opencode/big-pickle`    | free          | throwaway/experimental                         |
 
 Also free and working, but unproven for real work: `laguna-s-2.1-free`, `longcat-2.0-free`, `mimo-v2.5-free`, `nemotron-3-ultra-free`.
@@ -55,11 +55,15 @@ Re-check availability by spawning a trivial prompt; a disabled model fails immed
 
 **Harness:** `claude`
 **Prompt nicknames:** “claude”, “Claude Code”, “claude agent”, “claude subagent”, "cc"
-**Use Fable selectively:** reserve it for vague guidance, decomposition, and plan orchestration. Use Luna Max for bounded UI tweaks. Do not default every implementation task to Fable.
+**The Max plan is generous, so this harness is not the one to economize on.** Frontend work and MCP work belong here. Reserve Fable for vague guidance, decomposition, and plan orchestration; use Opus for frontend and for implementation that needs real strength.
 
-| Model hint | Model               | Recommended effort |
-| ---------- | ------------------- | ------------------ |
-| `fable`    | latest Claude Fable | `high`             |
+| Model hint | Model               | Recommended effort | Reach for it when                                       |
+| ---------- | ------------------- | ------------------ | ------------------------------------------------------- |
+| `opus`     | latest Claude Opus  | `high`             | frontend, visual, animation, interaction work            |
+| `fable`    | latest Claude Fable | `high`             | the goal is still vague and needs decomposition or a plan |
+| `sonnet`   | latest Claude Sonnet | `high`            | multi-step MCP work that does not need Opus              |
+
+The backend passes `model` through to the Claude Agent SDK, so any alias it accepts works.
 
 **Thinking budgets:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The extension maps these to Claude thinking-token budgets: 0, 1,024, 4,096, 10,000, 16,000, 32,000, and 63,999 tokens respectively.
 
@@ -85,22 +89,25 @@ Requires the Codex CLI to be installed and authenticated.
 
 **Harness:** `cursor`
 **Prompt nicknames:** “cursor”, “cursor-agent”, “Cursor CLI”, “cursor agent”, “cursor subagent”
-**Best default:** `composer-2.5` — Cursor's own model, and the reason to pick this harness at all. Use `cursor-grok-4.5` only when the user asks for grok.
+**This is now the cheap workhorse harness**, not a specialist one: `recon`, `mechanical_edit`, and `scoped_implementation` all route here, because the Cursor plan is flat and every run on it is a run that did not spend the Codex cap.
 
-**Cursor encodes reasoning effort and fast mode in the model id, not in flags.** There is no `--effort` and no `--fast`; `cursor-grok-4.5` on its own is not a real id. The extension resolves a family plus `reasoning_effort` into the real id, so pass the family and let it do that.
+**Best default:** `cursor-grok-4.6-fast` for read and mechanical work; `cursor-grok-4.6` (no `-fast`) at `xhigh` when the work needs depth. `composer-2.5` is Cursor's own model — reach for it when grok is struggling with Cursor-specific tooling.
 
-| Model               | Effort tiers?          | Recommended effort | Resolves to                   |
-| ------------------- | ---------------------- | ------------------ | ----------------------------- |
-| `composer-2.5`      | no — effort is ignored | —                  | `composer-2.5`                |
-| `composer-2.5-fast` | no — effort is ignored | —                  | `composer-2.5-fast`           |
-| `cursor-grok-4.5`   | `low`/`medium`/`high`  | `high`             | `cursor-grok-4.5-high`        |
-| `cursor-grok-4.5-fast` | `low`/`medium`/`high` | `high`            | `cursor-grok-4.5-high-fast`   |
+**Cursor encodes reasoning effort and fast mode in the model id, not in flags.** There is no `--effort` and no `--fast`; `cursor-grok-4.6` on its own is not a real id. The extension resolves a family plus `reasoning_effort` into the real id, so pass the family and let it do that.
 
-**Fast mode is a `-fast` suffix on the `model` string** — there is no separate parameter. Append it to the family (`cursor-grok-4.5-fast`) or to a full id (`cursor-grok-4.5-low-fast`). Fast trades depth for latency; use it for mechanical passes, not for judgment.
+| Model                  | Effort tiers?                    | Recommended effort | Resolves to                 |
+| ---------------------- | -------------------------------- | ------------------ | --------------------------- |
+| `cursor-grok-4.6`      | `low`/`medium`/`high`/`xhigh`    | `xhigh`            | `cursor-grok-4.6-xhigh`     |
+| `cursor-grok-4.6-fast` | `low`/`medium`/`high`/`xhigh`    | `high`             | `cursor-grok-4.6-high-fast` |
+| `composer-2.5`         | no — effort is ignored           | —                  | `composer-2.5`              |
+| `composer-2.5-fast`    | no — effort is ignored           | —                  | `composer-2.5-fast`         |
+| `cursor-grok-4.5`      | `high` only — the lower tiers were retired | `high`   | `cursor-grok-4.5-high`      |
 
-**Thinking budgets:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. For grok these collapse onto its three tiers — `off`/`minimal`/`low` → `low`, `medium` → `medium`, `high`/`xhigh`/`max` → `high`; omitting effort gives `medium`. Composer 2.5 has no tiers, so effort is accepted and ignored. An id that does not exist (e.g. `composer-2.5-high`) fails the spawn with the valid ids listed, rather than silently downgrading.
+**Fast mode is a `-fast` suffix on the `model` string** — there is no separate parameter. Append it to the family (`cursor-grok-4.6-fast`) or to a full id (`cursor-grok-4.6-low-fast`). Fast trades depth for latency; use it for reads and mechanical passes, not for judgment.
 
-`grok`, `grok-4.5`, and `composer` are accepted as shorthand. A full id is passed through unchanged, as is Cursor's bracket-override form (`'claude-opus-4-8[context=1m,effort=high,fast=false]'`).
+**Thinking budgets:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. For grok 4.6 these map `off`/`minimal`/`low` → `low`, `medium` → `medium`, `high` → `high`, `xhigh`/`max` → `xhigh`; omitting effort gives `medium`. An effort the family has no tier for walks to the nearest one it does have — which is what keeps an inherited `max` from failing a 4.5 spawn. A tier you *spell out* that does not exist still fails with the valid ids listed, because that is a mistake about the id, not an inherited default.
+
+`grok`, `grok-4.6`, and `composer` are accepted as shorthand — bare `grok` means 4.6. A full id is passed through unchanged, as is Cursor's bracket-override form (`'claude-opus-4-8[context=1m,effort=high,fast=false]'`).
 
 Requires the Cursor Agent CLI (`cursor-agent`) to be installed and logged in. Refresh the id table with `cursor-agent --list-models`.
 
@@ -114,20 +121,34 @@ Pick the class from the _work_, and cap the task to what that class allows. A ch
 
 | `task_class`             | The work                                                       | Harness / model                    | Effort   | Cap the class enforces in the child prompt                          |
 | ------------------------ | -------------------------------------------------------------- | ---------------------------------- | -------- | ------------------------------------------------------------------- |
-| `recon`                  | locate files, trace a flow, summarize prior art                | `pi` / `openai-codex/gpt-5.6-luna` | `medium` | read-only                                                           |
-| `mechanical_edit`        | apply a stated diff, rename, mirror a file, delete dead code   | `pi` / `openai-codex/gpt-5.6-luna` | `medium` | ≤3 files, all named in the prompt; zero design decisions left open  |
-| `scoped_implementation`  | one component or endpoint, behavior fully specified            | `pi` / `openai-codex/gpt-5.6-luna` | `max`    | ≤8 files; behavior stated, not just the goal                        |
-| `ui_tweak`               | bounded UI polish or interaction change                        | `pi` / `openai-codex/gpt-5.6-luna` | `max`    | ≤8 files; preserve existing patterns and tokens                     |
+| `recon`                  | locate files, trace a flow, summarize prior art                | `cursor` / `cursor-grok-4.6-fast`  | `high`   | read-only                                                           |
+| `bulk_scan`              | one slice of a wide fan-out — same question over many paths    | `pi` / `opencode/deepseek-v4-flash`| `medium` | read-only; only the named paths; findings as `file:line`, not prose |
+| `mechanical_edit`        | apply a stated diff, rename, mirror a file, delete dead code   | `cursor` / `cursor-grok-4.6-fast`  | `high`   | ≤3 files, all named in the prompt; zero design decisions left open  |
+| `scoped_implementation`  | one component or endpoint, behavior fully specified            | `cursor` / `cursor-grok-4.6`       | `xhigh`  | ≤8 files; behavior stated, not just the goal                        |
+| `ui_tweak`               | frontend, visual, or interaction work — polish, animation, layout | `claude` / `opus`               | `high`   | ≤8 files; preserve existing patterns and tokens                     |
 | `open_implementation`    | vague guidance, decomposition, or plan orchestration           | `claude` / `fable`                 | `high`   | report discrete steps, open questions, and judgment calls            |
 | `mcp_dependent`          | Linear, Figma, Sentry, Liftoff prod                            | `claude` / `fable`                 | `high`   | fetch and report; no implementing, no MCP writes                    |
 | `review`                 | is this right, what's risky, what's missing                    | `codex` / `gpt-5.6-terra`          | `high`   | read-only, second opinion not second author, >80% confidence        |
 | `deep_question`          | one hard problem, no breadth                                   | `pi` / `openai-codex/gpt-5.6-luna` | `xhigh`  | read-only; answer the one question, do not broaden                  |
 
+**Which pool a class spends is the whole design.** Four budgets, and they are not interchangeable:
+
+| Pool                    | Spent by                                | Costs                                                        |
+| ----------------------- | --------------------------------------- | ------------------------------------------------------------ |
+| Cursor plan             | `cursor` harness                        | flat — free at the margin, so read and mechanical work lives here |
+| OpenCode Zen (metered)  | `pi` + `opencode/…`                     | real cents per run, but no cap and no queue — this is what a wide fan-out is for |
+| Claude Max              | `claude` harness (Opus, Fable)          | generous — frontend work and MCP work belong here            |
+| Codex weekly cap        | `codex` harness, and `openai-codex/…` on pi | the scarcest pool, shared between every codex spawn and every luna spawn |
+
+The rule that follows: **cheap read and edit work must never touch the Codex pool.** `openai-codex/gpt-5.6-luna` is cheap in dollars and expensive in the only currency that runs out — it draws from the same weekly cap as `review`. `deep_question` is the one remaining exception, because it is a single call, not a fan-out. A `routing.test.ts` case asserts the read/mechanical classes stay off that pool.
+
+**Frontend work goes to Opus on the `claude` harness.** Visual, layout, animation, and interaction work is where model strength shows most and where a cheap model wastes the most attempts. Claude Max pays for it, so there is no reason to economize there.
+
 **Overrides are per field, and the harness is special.** `model` alone re-points the class's harness — that is how the codex budget rule below is applied (`review` + `model: gpt-5.6-luna` for a bounded diff). But overriding `harness` **drops the class's model**, because a model id belongs to one harness: `openai-codex/gpt-5.6-luna` means nothing to codex or claude. After a harness override, name the model too.
 
 **The caps are still instruction-only.** The class writes them into the child's prompt so they no longer depend on you remembering to — but nothing inspects the child's diff. A `recon` child that edited a file is a real failure worth reporting to the user.
 
-**Bounded UI work goes to Luna Max.** Use `ui_tweak` for UI polish and interaction changes with a clear target. Use `open_implementation` with Fable only when the goal needs interpretation, decomposition, or plan orchestration before implementation. Discrete review work remains Codex work.
+**Bounded frontend work goes to Opus.** Use `ui_tweak` for UI polish and interaction changes with a clear target. Use `open_implementation` with Fable only when the goal needs interpretation, decomposition, or plan orchestration before implementation. Discrete review work remains Codex work.
 
 **Codex has a hard usage budget — spend it deliberately.** It is a weekly subscription cap, not a per-call cost, so a burned budget blocks the reviews you have not thought of yet. Three rules:
 
@@ -191,7 +212,7 @@ Claude Code isolates parallel file-mutating agents in their own git worktrees fo
 
 ## Spawn and Manage
 
-Call `subagent_spawn` with a complete `prompt`, a short `name`, and a `task_class`, plus optional `working_dir` and any per-field override. `harness` is required only when no class fits. At most four subagents run concurrently.
+Call `subagent_spawn` with a complete `prompt`, a short `name`, and a `task_class`, plus optional `working_dir` and any per-field override. `harness` is required only when no class fits. **At most eight subagents run concurrently** — raised from four once the cheap classes moved off the Codex cap. The binding limit is now your own ability to read eight reports, not cost: eight children that return eight walls of text you skim is worse than three you actually use.
 
 - `subagent_check({ id })`: peek without blocking.
 - `subagent_send({ id, message })`: follow up on a settled near-miss, or correct a drifting run.
@@ -202,7 +223,15 @@ Call `subagent_spawn` with a complete `prompt`, a short `name`, and a `task_clas
 
 Results return automatically. After spawning, continue useful parent work instead of immediately waiting.
 
-**Watch context, not the clock.** There is no spawn timeout — a subagent that looks hung is usually burning its window. `subagent_check` reports context used and turn count. A run past **60% with no text output yet** is not going to finish cleanly: cancel it, and re-spawn the work split in two rather than re-running the same prompt. Letting it reach 100% wastes the whole run and returns nothing.
+**Watch context, not the clock. No subagent is ever compacted.** This is the failure mode to design against: no harness compacts a child, so a child that fills its window is killed and returns **nothing at all** — every finding it had already made is lost with it. There is no spawn timeout either, so a subagent that looks hung is usually burning its window.
+
+Three defenses, in order of how much they save:
+
+1. **The prompt asks the child to land early.** Every spawn now carries "you will not be compacted — if your context is filling, report what you have as partial with the next step named". That converts a total loss into a usable partial, and it is the only defense that works while you are not watching.
+2. **`subagent_check` reports context used and turn count.** A run past **60% with no text output yet** is not going to finish cleanly: cancel it and re-spawn the work split in two, rather than re-running the same prompt.
+3. **Split before spawning.** A child dies on context because it was given breadth, not because the model was weak. `bulk_scan` exists for exactly this — five children each reading three directories will finish where one child reading fifteen dies.
+
+A wide fan-out of cheap children is now affordable, which makes (3) the cheap fix it was not before. Prefer eight narrow `bulk_scan` slices to one broad `recon`.
 
 **`subagent_send` is the cheap fix; re-spawning is the expensive one.** A follow-up reuses the child's context — the role file it read, `AGENTS.md`, its greps, its file reads. A re-spawn pays for all of that again. So a report that is nearly right, or a run you can see drifting, takes a send.
 

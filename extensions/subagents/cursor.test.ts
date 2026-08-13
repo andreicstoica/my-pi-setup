@@ -50,25 +50,44 @@ test("cursor model ids resolve from family + effort + fast", () => {
     resolveCursorModel("composer-2.5-fast", undefined),
     "composer-2.5-fast",
   );
-  // The bug this table exists for: bare `cursor-grok-4.5` is not a real id.
+  // The bug this table exists for: bare `cursor-grok-4.6` is not a real id.
   assert.equal(
-    resolveCursorModel("cursor-grok-4.5", "high"),
-    "cursor-grok-4.5-high",
+    resolveCursorModel("cursor-grok-4.6", "high"),
+    "cursor-grok-4.6-high",
   );
   assert.equal(
-    resolveCursorModel("grok-4.5", undefined),
-    "cursor-grok-4.5-medium",
+    resolveCursorModel("grok-4.6", undefined),
+    "cursor-grok-4.6-medium",
   );
-  assert.equal(resolveCursorModel("grok", "max"), "cursor-grok-4.5-high");
-  assert.equal(resolveCursorModel("grok-4.5", "off"), "cursor-grok-4.5-low");
+  // Bare "grok" tracks the current generation.
+  assert.equal(resolveCursorModel("grok", "xhigh"), "cursor-grok-4.6-xhigh");
+  // `max` has no id; it asks for the family's top tier.
+  assert.equal(resolveCursorModel("grok", "max"), "cursor-grok-4.6-xhigh");
+  assert.equal(resolveCursorModel("grok-4.6", "off"), "cursor-grok-4.6-low");
   assert.equal(
-    resolveCursorModel("grok-4.5-fast", "high"),
-    "cursor-grok-4.5-high-fast",
+    resolveCursorModel("grok-4.6-fast", "high"),
+    "cursor-grok-4.6-high-fast",
   );
   // An explicit tier in the id beats the shared effort param.
   assert.equal(
-    resolveCursorModel("cursor-grok-4.5-low-fast", "high"),
-    "cursor-grok-4.5-low-fast",
+    resolveCursorModel("cursor-grok-4.6-low-fast", "high"),
+    "cursor-grok-4.6-low-fast",
+  );
+  // 4.5 kept only its `high` tier, so an inherited effort walks down to it
+  // instead of failing the spawn.
+  assert.equal(
+    resolveCursorModel("grok-4.5", undefined),
+    "cursor-grok-4.5-high",
+  );
+  assert.equal(resolveCursorModel("grok-4.5", "low"), "cursor-grok-4.5-high");
+  assert.equal(
+    resolveCursorModel("grok-4.5-fast", "max"),
+    "cursor-grok-4.5-high-fast",
+  );
+  // A hand-spelled tier that no longer exists is still an error, not a downgrade.
+  assert.throws(
+    () => resolveCursorModel("cursor-grok-4.5-low", undefined),
+    CursorModelError,
   );
   // Bracket overrides are cursor's own escape hatch and pass through.
   assert.equal(

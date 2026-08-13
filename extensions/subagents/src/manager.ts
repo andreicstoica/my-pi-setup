@@ -46,7 +46,13 @@ import {
   SpawnError,
 } from "./domain.ts";
 
-export const MAX_RUNNING = 4;
+/**
+ * Raised from 4 once the cheap classes moved off the Codex weekly cap and onto
+ * the Cursor plan and metered Zen models: the cap exists to stop a fan-out
+ * exhausting a shared budget or a machine, and neither of those binds at 4 any
+ * more. 8 is set by the parent's ability to *read* the reports, not by cost.
+ */
+export const MAX_RUNNING = 8;
 export const MAX_TRACKED = 64;
 const STOP_TIMEOUT_MS = 5_000;
 const ERROR_TEXT_MAX_LENGTH = 4_096;
