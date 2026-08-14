@@ -24,49 +24,22 @@ test("frontend work routes to Opus on the claude harness", () => {
   assert.match(routing.constraint ?? "", /bounded frontend work/);
 });
 
-/**
- * Spark bills to its own weekly window, shown as a second bar in the Codex TUI
- * next to the shared one. So it is an openai-codex model that does NOT spend
- * the pool `review` competes for, and the cheap-class rule below has to say so
- * — otherwise the next class that moves onto Spark looks like a violation.
- */
-const SPARK = "openai-codex/gpt-5.3-codex-spark";
-
-test("read and mechanical classes stay off the shared Codex weekly cap", () => {
+test("read and mechanical classes stay off the Codex weekly cap", () => {
   // The point of the cheap classes: none of them may route to the codex harness
   // or to an openai-codex model, because that pool is shared with `review`.
-  // Spark is exempt — separate cap, see above.
   for (const name of [
     "recon",
     "bulk_scan",
-    "quick_task",
     "mechanical_edit",
     "scoped_implementation",
   ] as const) {
     const entry = TASK_CLASSES[name];
     assert.notEqual(entry.harness, "codex", `${name} spends the codex cap`);
-    const model = entry.model ?? "";
     assert.ok(
-      !model.startsWith("openai-codex/") || model === SPARK,
-      `${name} spends the shared codex cap via a pi provider`,
+      !(entry.model ?? "").startsWith("openai-codex/"),
+      `${name} spends the codex cap via a pi provider`,
     );
   }
-});
-
-test("quick_task routes to Spark, which has its own weekly cap", () => {
-  const routing = resolveRouting({ taskClass: "quick_task" });
-  assert.equal(routing.harness, "pi");
-  assert.equal(routing.model, SPARK);
-  assert.equal(routing.reasoningEffort, "high");
-  // Spark supports low/medium/high/xhigh only — never assert `max` here.
-  assert.match(routing.constraint ?? "", /Run only the commands named/);
-});
-
-test("the cheaper classes still offer grok and deepseek", () => {
-  // Spark is an addition, not a replacement: recon and bulk_scan keep the
-  // stronger readers so the orchestrator picks between them per task.
-  assert.equal(TASK_CLASSES.recon.model, "cursor-grok-4.6-fast");
-  assert.equal(TASK_CLASSES.bulk_scan.model, "opencode/deepseek-v4-flash");
 });
 
 test("explicit fields override the class field by field", () => {

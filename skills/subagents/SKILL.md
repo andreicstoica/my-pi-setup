@@ -29,7 +29,6 @@ Prefer `provider/model-id`; a bare model id only works when unambiguous.
 | `openai-codex/gpt-5.6-sol`   | difficult coding work                  | `high`            |
 | `openai-codex/gpt-5.6-terra` | coding                                 | `medium`          |
 | `openai-codex/gpt-5.6-luna`  | cheap/mechanical passes; deep one-offs; bounded UI tweaks | `medium`, `xhigh`, `max` |
-| `openai-codex/gpt-5.3-codex-spark` | fast, fully specified work — run a command, answer a named lookup. **Its own weekly cap**, separate from the shared Codex one | `high` (`low`/`medium`/`xhigh` also valid; **no `max`**) |
 
 ### OpenCode Zen models (`opencode/…`)
 
@@ -81,7 +80,6 @@ Requires Claude Code to be installed and authenticated.
 | `gpt-5.6-luna`  | `high`             | bounded diff, single-file check, recon, mechanical work                 |
 | `gpt-5.6-terra` | `high`             | a normal PR-sized review — the default review model                     |
 | `gpt-5.6-sol`   | `high`             | coding work, or a review where the call is hard or the blast radius big |
-| `gpt-5.3-codex-spark` | `high`       | fully specified work only; bills to a **separate** weekly cap, so it does not compete with the reviews above. `max` is not a supported effort for it |
 
 **Thinking budgets accepted by the extension:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Codex maps these to the nearest effort supported by the selected model; `off`/`minimal` become `minimal`, while `max` becomes the highest extension-supported Codex effort.
 
@@ -125,7 +123,6 @@ Pick the class from the _work_, and cap the task to what that class allows. A ch
 | ------------------------ | -------------------------------------------------------------- | ---------------------------------- | -------- | ------------------------------------------------------------------- |
 | `recon`                  | locate files, trace a flow, summarize prior art                | `cursor` / `cursor-grok-4.6-fast`  | `high`   | read-only                                                           |
 | `bulk_scan`              | one slice of a wide fan-out — same question over many paths    | `pi` / `opencode/deepseek-v4-flash`| `medium` | read-only; only the named paths; findings as `file:line`, not prose |
-| `quick_task`             | fully specified work — run stated commands, answer a named lookup or grep | `pi` / `openai-codex/gpt-5.3-codex-spark` | `high` | only the named commands and the one question; no source file may change |
 | `mechanical_edit`        | apply a stated diff, rename, mirror a file, delete dead code   | `cursor` / `cursor-grok-4.6-fast`  | `high`   | ≤3 files, all named in the prompt; zero design decisions left open  |
 | `scoped_implementation`  | one component or endpoint, behavior fully specified            | `cursor` / `cursor-grok-4.6`       | `xhigh`  | ≤8 files; behavior stated, not just the goal                        |
 | `ui_tweak`               | frontend, visual, or interaction work — polish, animation, layout | `claude` / `opus`               | `high`   | ≤8 files; preserve existing patterns and tokens                     |
@@ -134,7 +131,7 @@ Pick the class from the _work_, and cap the task to what that class allows. A ch
 | `review`                 | is this right, what's risky, what's missing                    | `codex` / `gpt-5.6-terra`          | `high`   | read-only, second opinion not second author, >80% confidence        |
 | `deep_question`          | one hard problem, no breadth                                   | `pi` / `openai-codex/gpt-5.6-luna` | `xhigh`  | read-only; answer the one question, do not broaden                  |
 
-**Which pool a class spends is the whole design.** Five budgets, and they are not interchangeable:
+**Which pool a class spends is the whole design.** Four budgets, and they are not interchangeable:
 
 | Pool                    | Spent by                                | Costs                                                        |
 | ----------------------- | --------------------------------------- | ------------------------------------------------------------ |
@@ -142,16 +139,8 @@ Pick the class from the _work_, and cap the task to what that class allows. A ch
 | OpenCode Zen (metered)  | `pi` + `opencode/…`                     | real cents per run, but no cap and no queue — this is what a wide fan-out is for |
 | Claude Max              | `claude` harness (Opus, Fable)          | generous — frontend work and MCP work belong here            |
 | Codex weekly cap        | `codex` harness, and `openai-codex/…` on pi | the scarcest pool, shared between every codex spawn and every luna spawn |
-| Codex **Spark** weekly cap | `openai-codex/gpt-5.3-codex-spark`, on either the `pi` or the `codex` harness | its own window, shown as a second bar in the Codex TUI — spending it does not move the bar above |
 
-The rule that follows: **cheap read and edit work must never touch the shared Codex pool.** `openai-codex/gpt-5.6-luna` is cheap in dollars and expensive in the only currency that runs out — it draws from the same weekly cap as `review`. `deep_question` is the one remaining exception, because it is a single call, not a fan-out. A `routing.test.ts` case asserts the read/mechanical classes stay off that pool.
-
-**Spark is exempt from that rule, and it is the only openai-codex model that is.** It bills to the separate window above, so a `quick_task` fan-out costs nothing the `review` budget would have wanted. Two things follow:
-
-- **`quick_task` is not a cheaper `recon`.** Spark is fast, not smart. `recon` keeps `cursor-grok-4.6-fast` and `bulk_scan` keeps `opencode/deepseek-v4-flash` because both read better than Spark does. Choose per task: if the child has to decide *where* to look, or judge what it found, use `recon`/`bulk_scan`. If the path, pattern, or command is already named in the prompt and the child only has to go get the answer, use `quick_task`.
-- **Spark does not accept `max`.** Its efforts are `low`, `medium`, `high`, `xhigh`. `high` is both its default and the right one — a task that wants `max` is not a `quick_task`.
-
-Verified 2026-08-14: Spark runs on both `codex exec -m gpt-5.3-codex-spark` and `pi --provider openai-codex --model gpt-5.3-codex-spark`. It is `supported_in_api: false`, so it is reachable through ChatGPT auth only — never through an API key.
+The rule that follows: **cheap read and edit work must never touch the Codex pool.** `openai-codex/gpt-5.6-luna` is cheap in dollars and expensive in the only currency that runs out — it draws from the same weekly cap as `review`. `deep_question` is the one remaining exception, because it is a single call, not a fan-out. A `routing.test.ts` case asserts the read/mechanical classes stay off that pool.
 
 **Frontend work goes to Opus on the `claude` harness.** Visual, layout, animation, and interaction work is where model strength shows most and where a cheap model wastes the most attempts. Claude Max pays for it, so there is no reason to economize there.
 

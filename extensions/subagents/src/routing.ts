@@ -57,8 +57,7 @@ export const TASK_CLASSES = {
     harness: "cursor",
     model: "cursor-grok-4.6-fast",
     reasoningEffort: "high",
-    summary:
-      "locate files, trace a flow, or summarize prior art; read-only. Grok is the smarter reader — drop to quick_task when the target is already named and nothing has to be judged",
+    summary: "locate files, trace a flow, or summarize prior art; read-only",
     constraint: READ_ONLY,
   },
   bulk_scan: {
@@ -66,17 +65,8 @@ export const TASK_CLASSES = {
     model: "opencode/deepseek-v4-flash",
     reasoningEffort: "medium",
     summary:
-      "one slice of a wide fan-out — the same narrow question asked of many files or dirs; read-only, metered per token so keep the slice small. Deepseek reads better; use quick_task for a slice that is pure lookup",
+      "one slice of a wide fan-out — the same narrow question asked of many files or dirs; read-only, metered per token so keep the slice small",
     constraint: `${READ_ONLY} You are one slice of a wider sweep. Answer only for the paths named in this prompt and do not widen the search; another child covers the rest. Report findings as a short list with file:line, not prose.`,
-  },
-  quick_task: {
-    harness: "pi",
-    model: "openai-codex/gpt-5.3-codex-spark",
-    reasoningEffort: "high",
-    summary:
-      "fully specified work with no judgment left in it — run the stated commands and report output, or answer a named lookup/grep; free at the margin, because Spark has its own weekly cap separate from the Codex one",
-    constraint:
-      "Every decision in this task is already made here. Run only the commands named in this prompt and answer only the question asked. Do not create, edit, stage, delete, or commit any source file. If the task turns out to need a judgment call or a file change, stop and report that instead of making it.",
   },
   mechanical_edit: {
     harness: "cursor",
