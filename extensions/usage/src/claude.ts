@@ -17,11 +17,12 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { CLAUDE_STALE_AFTER_SECONDS } from "../../shared/dashboard-state.ts";
 
 export const SNAPSHOT_PATH = join(homedir(), ".claude", "usage-snapshot.json");
 
 /** Beyond this, the snapshot is reported as stale rather than shown as fact. */
-export const STALE_AFTER_SECONDS = 30 * 60;
+export const STALE_AFTER_SECONDS = CLAUDE_STALE_AFTER_SECONDS;
 
 export interface ClaudeWindow {
   readonly usedPercent: number;

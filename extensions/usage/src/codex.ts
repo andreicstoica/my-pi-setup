@@ -121,21 +121,12 @@ export function windowLabel(window: UsageWindow) {
   return `${mins}m`;
 }
 
-/** Compact "2d 3h" / "45m" / "now" until the window resets. */
-export function formatResetIn(
-  resetsAt: number | undefined,
-  nowSeconds: number,
-) {
-  if (resetsAt === undefined) return undefined;
-  const seconds = resetsAt - nowSeconds;
-  if (seconds <= 0) return "now";
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
+/**
+ * Re-exported so callers of this module keep one import site, while the footer
+ * — which now formats countdowns at draw time — can reach it without importing
+ * across extensions.
+ */
+export { formatResetIn } from "../../shared/dashboard-state.ts";
 
 /** Theme token for how alarming a remaining-percentage is. */
 export function severityToken(remainingPercent: number) {

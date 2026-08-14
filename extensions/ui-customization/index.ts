@@ -12,9 +12,11 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import {
+  CLAUDE_STALE_AFTER_SECONDS,
   emptyGitInfoState,
   emptyModelInfoState,
   emptyUsageInfoState,
+  formatResetIn,
   GIT_INFO_CHANNEL,
   MODEL_INFO_CHANNEL,
   REFRESH_CHANNEL,
@@ -189,12 +191,16 @@ function formatWorktree(cwd: string) {
  * nothing the reset countdown beside it did not already imply; Claude reports
  * both 5h and 7d, which do need telling apart.
  */
-export function formatWindows(windows: readonly UsageWindowState[]) {
+export function formatWindows(
+  windows: readonly UsageWindowState[],
+  nowSeconds: number,
+) {
   const showLabels = windows.length > 1;
   return windows
     .map((w) => {
       const head = showLabels ? `${w.label} ` : "";
-      return `${head}${w.remainingPercent}%${w.resetIn ? ` (${w.resetIn})` : ""}`;
+      const resetIn = formatResetIn(w.resetsAt, nowSeconds);
+      return `${head}${w.remainingPercent}%${resetIn ? ` (${resetIn})` : ""}`;
     })
     .join(" ");
 }
@@ -295,13 +301,16 @@ export default function uiCustomization(pi: ExtensionAPI) {
         render(width: number) {
           // Row 1 — subscription headroom on the left, where the eye lands
           // first, and the worktree on the right.
+          // Countdowns and staleness are resolved against the clock here, not
+          // when the state was published: a footer can sit on screen for hours.
+          const nowSeconds = Math.floor(Date.now() / 1000);
           const usageParts: string[] = [];
           if (usageInfo.codex.length > 0) {
             const lowest = Math.min(
               ...usageInfo.codex.map((w) => w.remainingPercent),
             );
             usageParts.push(
-              `${theme.fg("dim", "codex")} ${theme.fg(severity(lowest), formatWindows(usageInfo.codex))}`,
+              `${theme.fg("dim", "codex")} ${theme.fg(severity(lowest), formatWindows(usageInfo.codex, nowSeconds))}`,
             );
           }
           if (usageInfo.claude.length > 0) {
@@ -309,9 +318,13 @@ export default function uiCustomization(pi: ExtensionAPI) {
               ...usageInfo.claude.map((w) => w.remainingPercent),
             );
             // A file-sourced number that stopped refreshing must not read as current.
-            const label = usageInfo.claudeStale ? "cc?" : "cc";
+            const claudeStale =
+              usageInfo.claudeWrittenAt === null ||
+              nowSeconds - usageInfo.claudeWrittenAt >
+                CLAUDE_STALE_AFTER_SECONDS;
+            const label = claudeStale ? "cc?" : "cc";
             usageParts.push(
-              `${theme.fg("dim", label)} ${theme.fg(usageInfo.claudeStale ? "dim" : severity(lowest), formatWindows(usageInfo.claude))}`,
+              `${theme.fg("dim", label)} ${theme.fg(claudeStale ? "dim" : severity(lowest), formatWindows(usageInfo.claude, nowSeconds))}`,
             );
           }
           if (usageInfo.codexNoCredits) {

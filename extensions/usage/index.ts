@@ -14,6 +14,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
   emptyUsageInfoState,
+  REFRESH_CHANNEL,
   USAGE_INFO_CHANNEL,
   type UsageInfoState,
   type UsageWindowState,
@@ -59,26 +60,22 @@ function remainingPercent(usedPercent: number) {
   return Math.max(0, Math.min(100, Math.round(100 - usedPercent)));
 }
 
-function toWindowState(
-  window: UsageWindow,
-  nowSeconds: number,
-): UsageWindowState {
+function toWindowState(window: UsageWindow): UsageWindowState {
   return {
     label: windowLabel(window),
     remainingPercent: remainingPercent(window.usedPercent),
-    resetIn: formatResetIn(window.resetsAt, nowSeconds) ?? null,
+    resetsAt: window.resetsAt ?? null,
   };
 }
 
 function buildState(
   codex: CodexUsage | undefined,
   claude: ClaudeUsage | undefined,
-  nowSeconds: number,
 ): UsageInfoState {
   const state = emptyUsageInfoState();
 
   for (const window of [codex?.primary, codex?.secondary]) {
-    if (window) state.codex.push(toWindowState(window, nowSeconds));
+    if (window) state.codex.push(toWindowState(window));
   }
   // Credits are the backstop once a window empties — only worth surfacing when
   // headroom is actually short.
@@ -97,10 +94,10 @@ function buildState(
     state.claude.push({
       label,
       remainingPercent: remainingPercent(window.usedPercent),
-      resetIn: formatResetIn(window.resetsAt, nowSeconds) ?? null,
+      resetsAt: window.resetsAt ?? null,
     });
   }
-  state.claudeStale = claude?.stale ?? false;
+  state.claudeWrittenAt = claude?.writtenAt ?? null;
 
   return state;
 }
@@ -119,9 +116,10 @@ function report(
     ) as UsageWindow[];
     if (windows.length === 0) lines.push("  no rate-limit windows reported");
     for (const window of windows) {
-      const w = toWindowState(window, nowSeconds);
+      const w = toWindowState(window);
+      const resetIn = formatResetIn(w.resetsAt, nowSeconds);
       lines.push(
-        `  ${w.label}: ${w.remainingPercent}% left${w.resetIn ? ` (${w.resetIn})` : ""}  —  ${window.usedPercent}% used`,
+        `  ${w.label}: ${w.remainingPercent}% left${resetIn ? ` (${resetIn})` : ""}  —  ${window.usedPercent}% used`,
       );
     }
     if (codex.credits) {
@@ -164,18 +162,49 @@ function report(
   return lines.join("\n");
 }
 
+/** How often an idle session re-reads the numbers, so the footer never freezes. */
+const IDLE_REFRESH_MS = 60 * 1000;
+
+/**
+ * Emits the file-sourced half immediately and again once codex answers. The
+ * first emit costs a small `readFileSync`, so callers on hot paths (`input`,
+ * `turn_end`) never wait on a spawned process; the second is a no-op refresh of
+ * the same values while the codex cache is still warm.
+ */
 async function publish(pi: ExtensionAPI, force: boolean) {
-  const [codex, claude] = [await getCodex(force), readClaudeUsage()];
-  pi.events.emit(
-    USAGE_INFO_CHANNEL,
-    buildState(codex, claude, Math.floor(Date.now() / 1000)),
-  );
+  const emit = (
+    codex: CodexUsage | undefined,
+    claude: ClaudeUsage | undefined,
+  ) => pi.events.emit(USAGE_INFO_CHANNEL, buildState(codex, claude));
+
+  emit(cachedCodex?.usage, readClaudeUsage());
+  const codex = await getCodex(force);
+  const claude = readClaudeUsage();
+  emit(codex, claude);
   return { codex, claude };
 }
 
 export default function (pi: ExtensionAPI) {
+  let ticker: ReturnType<typeof setInterval> | undefined;
+
+  // Published state was only ever built at session_start, so a long-lived
+  // session showed percentages and countdowns from hours earlier as if current.
+  // Every cheap signal now republishes; the codex TTL keeps the process spawns
+  // down to one per five minutes regardless of how often this fires.
+  const refresh = () => void publish(pi, false);
+
   pi.on("session_start", async () => {
+    ticker ??= setInterval(refresh, IDLE_REFRESH_MS);
     await publish(pi, false);
+  });
+  pi.on("input", refresh);
+  pi.on("turn_end", refresh);
+  const stopRefreshListener = pi.events.on(REFRESH_CHANNEL, refresh);
+
+  pi.on("session_shutdown", () => {
+    stopRefreshListener();
+    if (ticker) clearInterval(ticker);
+    ticker = undefined;
   });
 
   pi.registerCommand("usage", {
