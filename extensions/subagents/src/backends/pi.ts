@@ -49,6 +49,26 @@ const CHILD_EXCLUDED_TOOL_NAMES = [
   "ask_user",
 ] as const;
 
+/**
+ * Tool names an upstream provider reserves for itself. A child that carries one
+ * fails its very first request with a 400 ("custom function name X is reserved")
+ * and returns nothing at all, which reads as a hung spawn rather than an error.
+ *
+ * `opencode` (OpenCode Zen) rejected the web extension's `web_search`; `web_fetch`
+ * is excluded with it because the same namespace claims both, and the classes that
+ * run there (`bulk_scan`) read named paths rather than the web. `openai-codex`
+ * accepts both, so this is keyed by provider instead of applied to every child.
+ */
+const PROVIDER_RESERVED_TOOL_NAMES: Record<string, readonly string[]> = {
+  opencode: ["web_search", "web_fetch"],
+};
+
+/** Tools to withhold from a child, given the provider its model resolved to. */
+export function childExcludedTools(provider: string | undefined) {
+  const reserved = provider ? PROVIDER_RESERVED_TOOL_NAMES[provider] : undefined;
+  return [...CHILD_EXCLUDED_TOOL_NAMES, ...(reserved ?? [])];
+}
+
 // --- Model + effort resolution -----------------------------------------------
 
 type ThinkingLevel = NonNullable<
@@ -292,7 +312,7 @@ const makePiSession = (
           resourceLoader: loader,
           model,
           thinkingLevel,
-          excludeTools: [...CHILD_EXCLUDED_TOOL_NAMES],
+          excludeTools: childExcludedTools(model?.provider),
         });
         // Start child extension session hooks/resources in headless mode.
         // A rejection here would otherwise leak the freshly created session:
