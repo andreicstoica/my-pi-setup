@@ -51,10 +51,13 @@ export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
 export const CHILD_REPORT_CONTRACT =
   "---\n" +
   "Report contract: your final message IS the result handed to the orchestrator, which cannot see this transcript. Lead with the answer — no preamble, no narration of the steps you took. Give concrete file paths, symbols, and commands rather than descriptions of them. State plainly anything you could not verify, could not do, or deliberately left undone; a gap you name is useful, a gap you omit is a bug. If you were asked a question, answer it in the first sentence.\n" +
-  // No harness compacts a subagent: a child that fills its window is killed and
-  // returns nothing at all, losing every finding it had already made. Nothing in
-  // the tool layer can prevent that, so the child is asked to land early instead.
-  "Context: you will not be compacted. If you notice your context filling, stop exploring and report what you have, marked as partial with the specific next step named — a partial report is useful, a run that dies full is worth nothing.";
+  // On claude (and assumed on codex/cursor) a child that fills its window is
+  // killed and returns nothing at all, losing every finding it had already made.
+  // pi children are the exception: they are real AgentSessions and auto-compact
+  // by default. The line is sent to every harness anyway — landing early beats a
+  // summarization round that drops the file:line detail the report exists for —
+  // so it is worded as an instruction, not as a claim about the harness.
+  "Context: do not count on being compacted. If you notice your context filling, stop exploring and report what you have, marked as partial with the specific next step named — a partial report is useful, a run that dies full is worth nothing.";
 
 /**
  * Composes the model-authored task prompt with the task class's constraint (if

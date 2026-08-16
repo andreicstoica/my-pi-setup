@@ -223,11 +223,20 @@ Call `subagent_spawn` with a complete `prompt`, a short `name`, and a `task_clas
 
 Results return automatically. After spawning, continue useful parent work instead of immediately waiting.
 
-**Watch context, not the clock. No subagent is ever compacted.** This is the failure mode to design against: no harness compacts a child, so a child that fills its window is killed and returns **nothing at all** — every finding it had already made is lost with it. There is no spawn timeout either, so a subagent that looks hung is usually burning its window.
+**Watch context, not the clock — and know which children compact.** A child that fills its window without compaction is killed and returns **nothing at all**; every finding it had already made dies with it. There is no spawn timeout either, so a subagent that looks hung is usually burning its window.
+
+| Harness  | Auto-compacts a child?                                                          |
+| -------- | ------------------------------------------------------------------------------- |
+| `pi`     | **yes** — a pi child is a real in-process `AgentSession`, and `compaction.enabled` defaults to `true` (`core/settings-manager.js` `getCompactionEnabled`). Threshold and overflow compaction both run inside the child's own prompt loop |
+| `claude` | no — Agent SDK subagents do not compact                                          |
+| `codex`  | unverified; assume no                                                            |
+| `cursor` | unverified; assume no                                                            |
+
+So `bulk_scan` and `deep_question` (both pi) survive a full window at the cost of a summarization round. The children that die silently are the cursor and codex ones — `recon`, `mechanical_edit`, `scoped_implementation`, `review` — which is exactly where the cheap wide fan-out lives. Design the defenses for those.
 
 Three defenses, in order of how much they save:
 
-1. **The prompt asks the child to land early.** Every spawn now carries "you will not be compacted — if your context is filling, report what you have as partial with the next step named". That converts a total loss into a usable partial, and it is the only defense that works while you are not watching.
+1. **The prompt asks the child to land early.** Every spawn carries "you will not be compacted — if your context is filling, report what you have as partial with the next step named". That converts a total loss into a usable partial, and it is the only defense that works while you are not watching. It stays on pi spawns too: landing early beats a summarization round that drops the `file:line` detail the report exists for.
 2. **`subagent_check` reports context used and turn count.** A run past **60% with no text output yet** is not going to finish cleanly: cancel it and re-spawn the work split in two, rather than re-running the same prompt.
 3. **Split before spawning.** A child dies on context because it was given breadth, not because the model was weak. `bulk_scan` exists for exactly this — five children each reading three directories will finish where one child reading fifteen dies.
 
