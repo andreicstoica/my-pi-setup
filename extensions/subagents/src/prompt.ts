@@ -1,4 +1,5 @@
 /** All model-facing strings for the subagents tools. */
+import { MAX_RUNNING } from "./domain.ts";
 
 /**
  * Describes subagent_spawn and the fixed concurrency cap. Harness, model, and
@@ -8,7 +9,9 @@
  * every request. The `harness` parameter description carries the short version.
  */
 export const SUBAGENT_SPAWN_TOOL_DESCRIPTION =
-  "Spawn a background subagent: a fully autonomous, headless agent with its own context window and the chosen harness's normal host permissions. Fire-and-forget — returns an id immediately, and the subagent's final output is queued back to you when it settles, or collect it with subagent_wait. Children cannot see this conversation, ask the user, or spawn further agents, so the prompt must be self-contained. Set `task_class` and let it derive the harness, model, and effort; read the `subagents` skill when no class fits or you mean to override one. Trusted working directories only. Max 4 running at once.";
+  "Spawn a background subagent: a fully autonomous, headless agent with its own context window and the chosen harness's normal host permissions. Fire-and-forget — returns an id immediately, and the subagent's final output is queued back to you when it settles, or collect it with subagent_wait. Children cannot see this conversation, ask the user, or spawn further agents, so the prompt must be self-contained. Set `task_class` and let it derive the harness, model, and effort; read the `subagents` skill when no class fits or you mean to override one. Trusted working directories only. Max " +
+  MAX_RUNNING +
+  " running at once.";
 
 /** Adds background subagent delegation to the parent model's available-tools prompt. */
 export const SUBAGENT_SPAWN_PROMPT_SNIPPET =

@@ -13,6 +13,17 @@ import { Data } from "effect";
 export const BACKEND_NAMES = ["pi", "claude", "codex", "cursor"] as const;
 export type BackendName = (typeof BACKEND_NAMES)[number];
 
+/**
+ * The cap is set by the parent's ability to *read* the reports, not by cost —
+ * budget stopped binding once the cheap classes moved off the Codex weekly cap
+ * and onto the Cursor plan and metered Zen models. It was 8 for that reason and
+ * is back to 4 for the other one: four settled children is about as much as a
+ * parent absorbs in one pass. Nothing forced the change — the limit has never
+ * been reached in practice (zero cap-limit messages across the session logs at
+ * either value), so it is a readability choice, not a resource one.
+ */
+export const MAX_RUNNING = 4;
+
 /** Who initiated the session. User asides stay out of model-facing tooling. */
 export type SubagentOrigin = "model" | "btw";
 
