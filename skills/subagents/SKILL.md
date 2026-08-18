@@ -212,7 +212,7 @@ Claude Code isolates parallel file-mutating agents in their own git worktrees fo
 
 ## Spawn and Manage
 
-Call `subagent_spawn` with a complete `prompt`, a short `name`, and a `task_class`, plus optional `working_dir` and any per-field override. `harness` is required only when no class fits. **At most eight subagents run concurrently** — raised from four once the cheap classes moved off the Codex cap. The binding limit is now your own ability to read eight reports, not cost: eight children that return eight walls of text you skim is worse than three you actually use.
+Call `subagent_spawn` with a complete `prompt`, a short `name`, and a `task_class`, plus optional `working_dir` and any per-field override. `harness` is required only when no class fits. **At most four subagents run concurrently** (`MAX_RUNNING`, `extensions/subagents/src/domain.ts`) — briefly eight once the cheap classes moved off the Codex cap, then returned to four. The binding limit is your own ability to read the reports, not cost: four children that return four walls of text you skim is worse than three you actually use.
 
 - `subagent_check({ id })`: peek without blocking.
 - `subagent_send({ id, message })`: follow up on a settled near-miss, or correct a drifting run.
@@ -240,7 +240,7 @@ Three defenses, in order of how much they save:
 2. **`subagent_check` reports context used and turn count.** A run past **60% with no text output yet** is not going to finish cleanly: cancel it and re-spawn the work split in two, rather than re-running the same prompt.
 3. **Split before spawning.** A child dies on context because it was given breadth, not because the model was weak. `bulk_scan` exists for exactly this — five children each reading three directories will finish where one child reading fifteen dies.
 
-A wide fan-out of cheap children is now affordable, which makes (3) the cheap fix it was not before. Prefer eight narrow `bulk_scan` slices to one broad `recon`.
+A wide fan-out of cheap children is now affordable, which makes (3) the cheap fix it was not before. Prefer four narrow `bulk_scan` slices to one broad `recon`.
 
 **`subagent_send` is the cheap fix; re-spawning is the expensive one.** A follow-up reuses the child's context — the role file it read, `AGENTS.md`, its greps, its file reads. A re-spawn pays for all of that again. So a report that is nearly right, or a run you can see drifting, takes a send.
 
