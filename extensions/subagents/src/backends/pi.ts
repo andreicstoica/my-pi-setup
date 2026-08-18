@@ -65,7 +65,9 @@ const PROVIDER_RESERVED_TOOL_NAMES: Record<string, readonly string[]> = {
 
 /** Tools to withhold from a child, given the provider its model resolved to. */
 export function childExcludedTools(provider: string | undefined) {
-  const reserved = provider ? PROVIDER_RESERVED_TOOL_NAMES[provider] : undefined;
+  const reserved = provider
+    ? PROVIDER_RESERVED_TOOL_NAMES[provider]
+    : undefined;
   return [...CHILD_EXCLUDED_TOOL_NAMES, ...(reserved ?? [])];
 }
 
