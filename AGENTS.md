@@ -28,6 +28,15 @@ You orchestrate: your job is to decompose, delegate, and review — not to read 
 
 **Peer agents live in herdr panes.** A subagent is for work you own; a peer pane is a different session with context you don't have (another worktree, another agent brand). To ask one, use the `herdr` skill / CLI: `herdr agent list`, then `herdr agent prompt <name-or-pane> "…" --wait --timeout <ms>`. Only you send — never a subagent. Don't scrape `herdr agent read`; tell the peer to write its answer to a file and return the path.
 
+## Context and cache
+
+**The prompt cache is the latency budget.** Measured over the session logs: a 28 h orchestration session held a 37% cache hit rate and re-sent 202M uncached input tokens, against 97% for a comparable session that did the work straight. Almost every cold call followed a long `subagent_wait` — the wait outlives the cache, so the next call re-prefills the whole context.
+
+- **Keep your own context small.** A cache miss on 350k tokens costs seconds of prefill and real money; a miss on 80k does not. You cannot prevent every miss, so make each one cheap. Delegate reads and `rg` sweeps, ask children for the finding and not the file, and start a new session per task instead of growing one.
+- **Batch the spawns, wait once.** Spawn everything that can run in parallel, then keep working — results are delivered on their own. Call `subagent_wait` only when you truly cannot proceed, and pass the whole batch of ids in one call. A spawn/wait/spawn/wait ladder pays a cold prefill per rung.
+- **Scope `git_diff`.** One session spent 8.6 MB of context on 68 full diffs. Diff the paths you care about, or read the stat first and then only the files that matter.
+- **Pasted screenshots stay in context forever.** They are downscaled on attach now (2000 px, ~150-250 KB — `scripts/patch-paster-optimize.mjs`, re-run it after `pi update`). In a session already full of large images, `/image-compress` forks a branch with text summaries in their place.
+
 ## Tools
 
 - Reading git history or changes: use `git_diff`, `git_show`, `git_log` — not `bash git …`. They render real diffs with `file:line` headers instead of flat text. `bash` is still right for git commands that *act* (commit, rebase, `gt`).

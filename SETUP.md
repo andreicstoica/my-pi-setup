@@ -32,6 +32,14 @@ pi install npm:pi-paster
 pi install git:github.com/algal/pi-openai-server-compaction
 ```
 
+After installing (and after every `pi update` or paster reinstall), re-apply the local image caps:
+
+```sh
+node ~/.pi/agent/scripts/patch-paster-optimize.mjs
+```
+
+paster ships with caps set to the Anthropic API hard limits (5 MB / 8000 px), so a Retina screen grab is attached at full size and then costs its full weight on every prompt-cache miss. The patch lowers the caps to 2000 px / 400 KB — measured 4.1 MB → 151 KB on a 5120x2880 grab, ~300 ms per image. Tune with `PI_PASTER_MAX_EDGE` / `PI_PASTER_MAX_BYTES`; the script is idempotent and fails loudly if paster changes upstream.
+
 `pi-openai-server-compaction` gives OpenAI models Codex-style server-side compaction, keeping both the OpenAI opaque artifact and a portable text summary, so forks and exports still work. Its `package.json` still pins pi `>=0.80.9 <0.81.0`; the pin is stale, and it is live-tested against 0.84.1 on `openai-codex/*`.
 
 ## Theme
