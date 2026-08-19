@@ -1,12 +1,4 @@
-/**
- * Settings sanity — the check that would have caught the July luna incident.
- *
- * Every `/model` pick and Ctrl+P cycle rewrites `defaultModel` in
- * settings.json, so a stray keypress silently demoted the orchestrator to
- * luna for days (Jul 25-27). Model choice is deliberate here; this script
- * fails loudly when the persisted default has drifted from it. Update
- * EXPECTED below when the intended default actually changes.
- */
+// `/model` and Ctrl+P persist their selection. Keep this guard aligned with the intended default.
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -14,8 +6,8 @@ import { join } from "node:path";
 
 const EXPECTED = {
   defaultProvider: "openai-codex",
-  defaultModel: "gpt-5.6-sol",
-  defaultThinkingLevel: "high",
+  defaultModel: "gpt-5.6-terra",
+  defaultThinkingLevel: "medium",
 };
 
 const settingsPath = join(homedir(), ".pi", "agent", "settings.json");

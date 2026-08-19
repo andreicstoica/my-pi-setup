@@ -1,6 +1,6 @@
 ---
 name: subagents
-description: invoke this skill when the user asks you to use subagents
+description: Route and manage delegated work across Pi, Claude, Codex, and Cursor. Read before spawning any subagent or choosing a task_class. Do not load for work that stays in the parent session.
 ---
 
 # Subagents
@@ -197,7 +197,7 @@ On top of the role, every spawn that may write files states all six, or it does 
 2. **In scope** — the files it may touch, named. "Find the relevant files" is a recon task, not an edit task.
 3. **Out of scope** — what not to touch, beyond what the role already forbids.
 4. **Skills to read, by path** — subagents inherit project skills but will not find them from a terse prompt. Name them: "read `.agents/skills/database/SKILL.md` before writing the migration".
-5. **Verify** — the exact commands that must pass: `lint`, `tsc --noEmit`, and the specific tests. Not "make sure it works".
+5. **Verify** — the exact repository commands that must pass. For Liftoff frontend work use `tsc -b`, never bare `tsc --noEmit`; name the specific lint and test commands. Not "make sure it works".
 6. **Report** — what to hand back.
 
 A prompt under ~1000 characters for an implementation task is a warning sign; the failed runs in this setup's history averaged ~900 and produced scope creep, committed lockfiles, and tests written against the implementation.
