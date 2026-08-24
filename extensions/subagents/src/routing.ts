@@ -106,10 +106,10 @@ export const TASK_CLASSES = {
   },
   mcp_dependent: {
     harness: "claude",
-    model: "fable",
-    reasoningEffort: "high",
+    model: "sonnet",
+    reasoningEffort: "medium",
     summary:
-      "needs Linear, Figma, Sentry, or the Liftoff prod MCP — only this harness has MCP",
+      "needs Linear, Figma, Sentry, Notion, or the Liftoff prod MCP — claude (sonnet) by default; codex + gpt-5.6-luna medium for Liftoff MCP work",
     constraint:
       "Fetch and report. Do not implement anything off the back of what you find, and do not write through any MCP tool.",
   },
