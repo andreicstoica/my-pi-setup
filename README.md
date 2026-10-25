@@ -13,6 +13,7 @@ This setup is fairly opinionated, it:
 - adds `remember` + `recall` memory, scoped per repo and shared across its worktrees
 - adds first-class `fd` (file discovery) and `rg` (content search) tools
 - loads cross-harness skills from `~/.agents/skills` and keeps Pi-only skills in `~/.pi/agent/skills`
+- vendors four extensions from [Pringled/pi-extensions](https://github.com/Pringled/pi-extensions) (MIT): `polish` (Claude Code-style tool rows and diffs), `checkpoints` (`/tree` and `/fork` also restore edited files), `model-pick` (`/pick`, favorites and recent models first) and `heads-up` (flags one thing you might have missed after a task)
 
 ![Pi setup interface](assets/pi-setup.jpeg)
 

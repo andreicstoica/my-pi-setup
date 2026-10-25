@@ -4,6 +4,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ReadonlyFooterDataProvider,
+  Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
   getCapabilities,
@@ -91,6 +92,19 @@ function formatTokens(tokens: number) {
   if (tokens < 1_000) return `${tokens}`;
   if (tokens < 1_000_000) return `${Math.round(tokens / 1_000)}k`;
   return `${(tokens / 1_000_000).toFixed(1)}m`;
+}
+
+const CONTEXT_BAR_WIDTH = 10;
+
+function contextBar(percent: number | null, theme: Theme) {
+  if (percent === null) return "";
+  const used = Math.min(100, Math.max(0, percent));
+  const filled = Math.round((used / 100) * CONTEXT_BAR_WIDTH);
+  const color = used >= 80 ? "error" : used >= 50 ? "warning" : "success";
+  return (
+    theme.fg(color, "█".repeat(filled)) +
+    theme.fg("dim", "░".repeat(CONTEXT_BAR_WIDTH - filled))
+  );
 }
 
 function formatDirectory(cwd: string) {
@@ -215,7 +229,13 @@ export default function uiCustomization(pi: ExtensionAPI) {
             ? `${modelInfo.modelId} · ${modelInfo.thinking}`
             : modelInfo.modelId;
 
-          const sessionParts = [model, `${contextPercent}%/${contextWindow}`];
+          const context = [
+            contextBar(modelInfo.contextPercent, theme),
+            `${contextPercent}%/${contextWindow}`,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          const sessionParts = [model, context];
           // On a flat-rate subscription the dollar figure is noise; on a metered
           // provider (openrouter, opencode) it is the only spend signal there is.
           if (!SUBSCRIPTION_PROVIDERS.has(modelInfo.provider)) {

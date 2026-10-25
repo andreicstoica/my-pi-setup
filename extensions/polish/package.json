@@ -1,0 +1,11 @@
+{
+  "name": "polish",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@shikijs/langs": "4.5.0",
+    "@shikijs/themes": "4.5.0",
+    "diff": "9.0.0",
+    "shiki": "4.5.0"
+  }
+}

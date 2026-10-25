@@ -11,6 +11,9 @@ sessions/
 /memory/
 /workflows/
 /artifacts/
+# File snapshots from the checkpoints extension hold repo contents.
+/checkpoints/
+model-picker-state.json
 auth.json
 mcp-auth.json
 mcp-cache.json

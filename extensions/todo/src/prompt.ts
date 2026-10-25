@@ -54,7 +54,7 @@ export const TODO_PARAMETER_DESCRIPTIONS = {
     "New milestones to append in order. The first ready item starts automatically.",
   createSubject: "Imperative one-liner, roughly 5-9 words.",
   createActiveForm:
-    'Present continuous form shown in the spinner while this item runs (e.g. "Wiring the dock").',
+    'Present continuous form shown in the todo panel while this item runs (e.g. "Wiring the dock").',
   createBlockedBy: "Ids of items that must finish before this one can start.",
   createOwner: "Agent name that owns this item, when delegating.",
   update: "Patches to existing items, applied after any creates in this call.",

@@ -453,10 +453,9 @@ export default function (pi: ExtensionAPI) {
       projectLabel: projectPath ? path.basename(projectPath, ".md") : undefined,
       paths: { global: memoryPath(), project: projectPath },
     });
-    if (!memory) return undefined;
-    // Appending the same block each turn keeps the prefix stable, so prompt
-    // caching still hits. Injecting a message instead would grow the session.
-    return { systemPrompt: `${event.systemPrompt}\n\n${memory}` };
+    // A section, not a `systemPrompt` override: an override discards every
+    // later handler's `systemPromptOptions` edits for the turn.
+    if (memory) event.systemPromptOptions.sections.memory = memory;
   });
 
   pi.registerTool({

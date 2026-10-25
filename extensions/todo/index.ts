@@ -136,11 +136,6 @@ export default function (pi: ExtensionAPI) {
         : undefined,
       { placement: "aboveEditor" },
     );
-
-    // The spinner narrates the active step, which is the whole reason
-    // activeForm exists.
-    const running = state.items.find((t) => t.status === "in_progress");
-    ui.setWorkingMessage(running?.activeForm || undefined);
   };
 
   // --- Lifecycle ---------------------------------------------------------
@@ -162,7 +157,6 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", () => {
     ui?.setWidget(WIDGET_KEY, undefined);
-    ui?.setWorkingMessage();
     ui = undefined;
   });
 
