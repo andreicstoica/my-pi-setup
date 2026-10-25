@@ -104,6 +104,7 @@ test("child denylist keeps extension and workflow structured tools available", a
         "subagent_cancel",
         "subagent_check",
         "subagent_list",
+        "subagent_send",
         "workflow",
         "ask_user",
       ],
@@ -173,6 +174,8 @@ test("resource loading gates project extensions but retains global extensions", 
       .extensions.flatMap((extension) => [...extension.tools.keys()]);
     assert.equal(untrustedTools.includes("global_fixture"), true);
     assert.equal(untrustedTools.includes("project_fixture"), false);
+    assert.equal(untrustedTools.includes("codemode"), true);
+    assert.equal(untrustedTools.includes("tool_search"), false);
 
     const trusted = await createChildResources({
       cwd,
@@ -184,6 +187,60 @@ test("resource loading gates project extensions but retains global extensions", 
       .extensions.flatMap((extension) => [...extension.tools.keys()]);
     assert.equal(trustedTools.includes("global_fixture"), true);
     assert.equal(trustedTools.includes("project_fixture"), true);
+
+    untrusted.settingsManager.applyOverrides({ defaultTools: ["+codemode"] });
+    const { session } = await createAgentSession({
+      cwd,
+      agentDir,
+      resourceLoader: untrusted.loader,
+      settingsManager: untrusted.settingsManager,
+      sessionManager: SessionManager.inMemory(cwd),
+      ...childToolPolicy(),
+    });
+    try {
+      await bindChildSessionExtensions(session);
+      const codemode = session.agent.state.tools.find(
+        (tool) => tool.name === "codemode",
+      );
+      assert.ok(codemode);
+      const code = "text(await tools.global_fixture({}));";
+      session.sessionManager.appendMessage({
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "test-codemode",
+            name: "codemode",
+            arguments: { code },
+          },
+        ],
+        api: "openai-responses",
+        provider: "openai",
+        model: "fixture",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+      });
+      session.refreshContext();
+      const result = await codemode.execute("test-codemode", { code });
+      const output = result.content
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n");
+      assert.match(output, /Script completed/);
+      assert.match(output, /ok/);
+      for (const denied of CHILD_EXCLUDED_TOOL_NAMES) {
+        assert.equal(session.getCallableToolNames().includes(denied), false);
+      }
+    } finally {
+      await shutdownAndDisposeChildSession(session);
+    }
   });
 });
 

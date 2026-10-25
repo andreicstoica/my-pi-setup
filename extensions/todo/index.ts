@@ -3,8 +3,8 @@
  *
  * Tool (for the LLM):
  * - todo: create and/or update checklist items in one call. Ids are assigned
- *   on create. Warnings (two items in_progress, pending→completed jumps,
- *   unresolved blockers) come back in the result so the model self-corrects.
+ *   on create. Warnings (two items in_progress, unresolved blockers) come back
+ *   in the result so the model self-corrects.
  *
  * The point of the design is that the plan cannot go stale. Every mutation is
  * appended to the session as a custom entry (state only, never in LLM context),
@@ -36,6 +36,7 @@ import {
   emptyTodoState,
   openItems,
   replay,
+  type Todo,
   type TodoMutation,
   type TodoState,
 } from "./src/domain.ts";
@@ -61,6 +62,36 @@ const STATUS = Type.Union([
   Type.Literal("completed"),
   Type.Literal("cancelled"),
 ]);
+
+const OUTPUT_SCHEMA = Type.Object({
+  createdIds: Type.Array(Type.String()),
+  warnings: Type.Array(Type.String()),
+  summary: Type.String(),
+  items: Type.Array(
+    Type.Object({
+      id: Type.String(),
+      subject: Type.String(),
+      status: STATUS,
+      blockedBy: Type.Array(Type.String()),
+      createdSeq: Type.Number(),
+      updatedSeq: Type.Number(),
+      owner: Type.Optional(Type.String()),
+      activeForm: Type.Optional(Type.String()),
+    }),
+  ),
+});
+
+/** Copies each item so scripts never hold a reference to live state. */
+const snapshotItem = (todo: Todo) => ({
+  id: todo.id,
+  subject: todo.subject,
+  status: todo.status,
+  blockedBy: [...todo.blockedBy],
+  createdSeq: todo.createdSeq,
+  updatedSeq: todo.updatedSeq,
+  ...(todo.owner !== undefined && { owner: todo.owner }),
+  ...(todo.activeForm !== undefined && { activeForm: todo.activeForm }),
+});
 
 /** Details attached to the tool result, read back by `renderResult`. */
 type TodoDetails = {
@@ -208,6 +239,8 @@ export default function (pi: ExtensionAPI) {
         }),
       ),
     }),
+    outputSchema: OUTPUT_SCHEMA,
+    executionMode: "sequential",
     async execute(_toolCallId, params) {
       const mutation: TodoMutation = {
         create: params.create,
@@ -226,14 +259,22 @@ export default function (pi: ExtensionAPI) {
       pi.appendEntry<TodoMutation>(MUTATION_ENTRY, mutation);
       refreshUI();
 
+      const details: TodoDetails = {
+        createdIds: result.createdIds,
+        warnings: result.warnings,
+        summary: summarize(state),
+      };
+
       return {
         content: [
           { type: "text", text: renderToolResult(state, result.warnings) },
         ],
-        details: {
-          createdIds: result.createdIds,
-          warnings: result.warnings,
-          summary: summarize(state),
+        details,
+        structuredContent: {
+          createdIds: [...details.createdIds],
+          warnings: [...details.warnings],
+          summary: details.summary,
+          items: state.items.map(snapshotItem),
         },
       };
     },

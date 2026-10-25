@@ -56,7 +56,6 @@ function executable(file: string) {
  * Resolve the Claude Code CLI once from PATH. The SDK can also run without
  * this (it bundles a CLI), but pointing it at the user's installed binary
  * keeps versions, settings, and login state consistent with their terminal.
- * Exported for the mcp-bridge extension, which shares the same requirement.
  */
 export function resolveClaudeBinary() {
   if (cachedClaudeBinary !== undefined) return cachedClaudeBinary ?? undefined;
@@ -139,12 +138,7 @@ class ClaudeInput implements AsyncIterable<SDKUserMessage> {
 
 // --- Model, effort, and transcript helpers ----------------------------------
 
-/**
- * Claude's deprecated-but-supported maxThinkingTokens is the closest match to
- * the shared numeric scale requested by this extension. Zero explicitly
- * disables extended thinking in SDK 0.3.207; an omitted effort leaves the CLI
- * default untouched.
- */
+/** Omitted effort leaves the CLI's thinking default untouched. */
 const THINKING_BUDGETS = {
   off: 0,
   minimal: 1_024,
@@ -375,9 +369,12 @@ const makeClaudeSession = (
               ? { pathToClaudeCodeExecutable: claudeBinary }
               : {}),
             ...(task.model ? { model: task.model } : {}),
-            ...(thinkingBudget !== undefined
-              ? { maxThinkingTokens: thinkingBudget }
-              : {}),
+            // Adaptive models can ignore a zero legacy token budget.
+            ...(thinkingBudget === 0
+              ? { thinking: { type: "disabled" as const } }
+              : thinkingBudget !== undefined
+                ? { maxThinkingTokens: thinkingBudget }
+                : {}),
           },
         }),
       catch: (error) => new SpawnError({ message: boundedError(error) }),

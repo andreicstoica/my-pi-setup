@@ -16,11 +16,27 @@ test("a task class fills harness, model, and effort", () => {
   assert.match(routing.constraint ?? "", /Read-only/);
 });
 
+test("current Grok and Luna generations are selected by default", () => {
+  assert.equal(resolveRouting({ taskClass: "recon" }).model, "grok-4.7-fast");
+  assert.equal(
+    resolveRouting({ taskClass: "mechanical_edit" }).model,
+    "grok-4.7-fast",
+  );
+  assert.equal(
+    resolveRouting({ taskClass: "scoped_implementation" }).model,
+    "grok-4.7",
+  );
+  assert.equal(
+    resolveRouting({ taskClass: "deep_question" }).model,
+    "openai-codex/gpt-6-luna",
+  );
+});
+
 test("frontend work routes to Opus on the claude harness", () => {
   const routing = resolveRouting({ taskClass: "ui_tweak" });
   assert.equal(routing.harness, "claude");
   assert.equal(routing.model, "opus");
-  assert.equal(routing.reasoningEffort, "high");
+  assert.equal(routing.reasoningEffort, "medium");
   assert.match(routing.constraint ?? "", /bounded frontend work/);
 });
 
@@ -61,7 +77,7 @@ test("overriding the harness drops the class model rather than mismatching it", 
   assert.equal(routing.model, undefined);
   // Effort and the read-only constraint still apply — only the model was
   // harness-specific.
-  assert.equal(routing.reasoningEffort, "high");
+  assert.equal(routing.reasoningEffort, "medium");
   assert.match(routing.constraint ?? "", /Read-only/);
 });
 
@@ -70,11 +86,11 @@ test("an overriding harness keeps the class model when it is the same harness", 
   assert.equal(routing.model, "opencode/deepseek-v4-flash");
 });
 
-test("no class leaves every field to the caller", () => {
+test("no class defaults to medium effort and leaves harness and model to the caller", () => {
   const routing = resolveRouting({ harness: "cursor" });
   assert.equal(routing.harness, "cursor");
   assert.equal(routing.model, undefined);
-  assert.equal(routing.reasoningEffort, undefined);
+  assert.equal(routing.reasoningEffort, "medium");
   assert.equal(routing.constraint, undefined);
 });
 

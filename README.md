@@ -7,10 +7,12 @@ This setup is fairly opinionated, it:
 - updates the bottom bar to have the info I prefer to see
 - adds background terminals + ui to manage them
 - adds subagents to pi
+- uses native MCP with read-only guards, without a Claude Code proxy
 - adds workflows to pi
 - adds an ask user tool, which lets the model ask multiple choice questions
 - adds `remember` + `recall` memory, scoped per repo and shared across its worktrees
 - adds first-class `fd` (file discovery) and `rg` (content search) tools
+- loads cross-harness skills from `~/.agents/skills` and keeps Pi-only skills in `~/.pi/agent/skills`
 
 ![Pi setup interface](assets/pi-setup.jpeg)
 

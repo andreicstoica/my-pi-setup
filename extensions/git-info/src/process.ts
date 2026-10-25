@@ -1,6 +1,5 @@
 import { Context, Effect, Layer, Stream } from "effect";
-import { ChildProcess } from "effect/unstable/process";
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const MAX_STREAM_CHARS = 10 * 1_024 * 1_024;
 const TRUNCATED_MARKER = "\n[command output truncated]\n";
@@ -40,7 +39,7 @@ function appendCommandFailure(stderr: string, command: string, error: Error) {
 export const CommandRunnerLive = Layer.effect(
   CommandRunner,
   Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
     return CommandRunner.of({
       run: (command, args, cwd, timeout) =>

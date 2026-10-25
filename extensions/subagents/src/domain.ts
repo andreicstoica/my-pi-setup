@@ -23,6 +23,8 @@ export type BackendName = (typeof BACKEND_NAMES)[number];
  * either value), so it is a readability choice, not a resource one.
  */
 export const MAX_RUNNING = 4;
+export const DEFAULT_MAX_TURNS = 40;
+export const DEFAULT_TIMEOUT_MS = 10 * 60 * 1_000;
 
 /** Who initiated the session. User asides stay out of model-facing tooling. */
 export type SubagentOrigin = "model" | "btw";
@@ -73,6 +75,8 @@ export interface SpawnTask {
   readonly model?: string;
   /** Shared effort scale; each backend maps it to its native equivalent. */
   readonly reasoningEffort?: ReasoningEffort;
+  readonly maxTurns?: number;
+  readonly timeoutMs?: number;
   readonly parent: ParentContext;
 }
 

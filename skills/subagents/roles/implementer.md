@@ -24,7 +24,7 @@ Also read `AGENTS.md` (or `CLAUDE.md`) for conventions.
 
 ## Verify
 
-Run the exact commands the prompt lists, and report their real output. If the prompt named none, run the repository's real lint, typecheck, and tests for the files you changed. For Liftoff frontend work use `tsc -b`; bare `tsc --noEmit` checks nothing there. Write the tests the change needs, not tests that assert your implementation back to itself.
+Run the exact commands the prompt lists, and report their real output. If the prompt named none, run the repository's real focused lint, typecheck, and tests for the files you changed, using its current instructions. Do not duplicate full-suite or shared-database checks assigned to the parent. Write the tests the change needs, not tests that assert your implementation back to itself.
 
 If a check fails and you cannot fix it inside your scope, **say so plainly and stop**. A reported failure is useful; a silently weakened test is not.
 

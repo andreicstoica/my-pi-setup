@@ -75,7 +75,7 @@ function resolveCursorBinary() {
 
 /**
  * Cursor encodes BOTH reasoning effort and fast mode in the model id — there is
- * no `--effort` and no `--fast` flag. `cursor-grok-4.6` alone is NOT a real id
+ * no `--effort` and no `--fast` flag. `grok-4.7` alone is NOT a real id
  * (passing it fails); the tiers are `-low` / `-medium` / `-high` / `-xhigh`,
  * each with an optional `-fast` twin. Composer 2.5 has no tiers at all, only
  * `composer-2.5` and `composer-2.5-fast`.
@@ -90,6 +90,14 @@ function resolveCursorBinary() {
 const KNOWN_CURSOR_MODELS: ReadonlyArray<string> = [
   "composer-2.5",
   "composer-2.5-fast",
+  "grok-4.7-low",
+  "grok-4.7-low-fast",
+  "grok-4.7-medium",
+  "grok-4.7-medium-fast",
+  "grok-4.7-high",
+  "grok-4.7-high-fast",
+  "grok-4.7-xhigh",
+  "grok-4.7-xhigh-fast",
   "cursor-grok-4.6-low",
   "cursor-grok-4.6-low-fast",
   "cursor-grok-4.6-medium",
@@ -113,6 +121,7 @@ const CURSOR_EFFORT_FAMILIES: ReadonlyMap<
   string,
   { readonly tiers: ReadonlyArray<string>; readonly fallback: string }
 > = new Map([
+  ["grok-4.7", { tiers: ["low", "medium", "high", "xhigh"], fallback: "high" }],
   [
     "cursor-grok-4.6",
     { tiers: ["low", "medium", "high", "xhigh"], fallback: "medium" },
@@ -125,10 +134,13 @@ const CURSOR_EFFORT_FAMILIES: ReadonlyMap<
 /** Shorthands the model is likely to write, mapped to the canonical family. */
 const CURSOR_FAMILY_ALIASES: ReadonlyMap<string, string> = new Map([
   // Bare "grok" means the current generation, not the one this file was written against.
-  ["grok", "cursor-grok-4.6"],
+  ["grok", "grok-4.7"],
+  ["grok-4.7", "grok-4.7"],
+  ["grok4.7", "grok-4.7"],
+  ["cursor-grok-4.7", "grok-4.7"],
   ["grok-4.6", "cursor-grok-4.6"],
   ["grok4.6", "cursor-grok-4.6"],
-  ["cursor-grok", "cursor-grok-4.6"],
+  ["cursor-grok", "grok-4.7"],
   ["cursor-grok-4.6", "cursor-grok-4.6"],
   ["grok-4.5", "cursor-grok-4.5"],
   ["grok4.5", "cursor-grok-4.5"],
@@ -192,7 +204,10 @@ function knownModelsMessage(known: ReadonlyArray<string>) {
   // Only the first-class ids are listed; the live list has ~190 entries and a
   // wall of them would be useless in an error message.
   const firstClass = known.filter(
-    (id) => id.startsWith("composer-") || id.startsWith("cursor-grok-"),
+    (id) =>
+      id.startsWith("composer-") ||
+      id.startsWith("cursor-grok-") ||
+      id.startsWith("grok-"),
   );
   return (firstClass.length > 0 ? firstClass : KNOWN_CURSOR_MODELS).join(", ");
 }

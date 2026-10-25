@@ -76,6 +76,17 @@ import {
   SUBAGENT_WAIT_PARAMETER_DESCRIPTIONS,
   SUBAGENT_WAIT_TOOL_DESCRIPTION,
 } from "./src/prompt.ts";
+import {
+  cancelOutputSchema,
+  checkOutputSchema,
+  listOutputSchema,
+  projectCheck,
+  projectSubagent,
+  projectWaitResults,
+  sendOutputSchema,
+  spawnOutputSchema,
+  waitOutputSchema,
+} from "./src/results.ts";
 import { createDeferredResultDelivery } from "./src/result-delivery.ts";
 import {
   describeTaskClasses,
@@ -343,6 +354,7 @@ export default function (pi: ExtensionAPI) {
     description: SUBAGENT_SPAWN_TOOL_DESCRIPTION,
     promptSnippet: SUBAGENT_SPAWN_PROMPT_SNIPPET,
     promptGuidelines: SUBAGENT_SPAWN_PROMPT_GUIDELINES,
+    outputSchema: spawnOutputSchema,
     parameters: Type.Object({
       prompt: Type.String({
         description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.prompt,
@@ -375,6 +387,19 @@ export default function (pi: ExtensionAPI) {
           description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.reasoningEffort,
         }),
       ),
+      max_turns: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.maxTurns,
+        }),
+      ),
+      timeout_seconds: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          maximum: 86_400,
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.timeoutSeconds,
+        }),
+      ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const manager = await getManager();
@@ -397,10 +422,18 @@ export default function (pi: ExtensionAPI) {
       }
 
       const title = params.name.trim().slice(0, 160) || "subagent";
+      const limits = {
+        maxTurns: params.max_turns,
+        timeoutMs:
+          params.timeout_seconds === undefined
+            ? undefined
+            : params.timeout_seconds * 1_000,
+      };
       const snap = await runTool(
         getRuntime(),
         manager.spawn(harness, {
-          prompt: buildChildPrompt(params.prompt, routing.constraint),
+          prompt: buildChildPrompt(params.prompt, routing.constraint, limits),
+          ...limits,
           title,
           cwd,
           model: routing.model,
@@ -442,6 +475,14 @@ export default function (pi: ExtensionAPI) {
           harness,
           model: snap.meta.modelLabel,
         },
+        structuredContent: {
+          id: snap.id,
+          title: snap.title,
+          harness,
+          cwd,
+          status: snap.status,
+          ...(snap.meta.modelLabel ? { model: snap.meta.modelLabel } : {}),
+        },
       };
     },
 
@@ -482,6 +523,7 @@ export default function (pi: ExtensionAPI) {
     name: "subagent_wait",
     label: "Wait for Subagents",
     description: SUBAGENT_WAIT_TOOL_DESCRIPTION,
+    outputSchema: waitOutputSchema,
     parameters: Type.Object({
       ids: Type.Array(Type.String(), {
         maxItems: 64,
@@ -580,6 +622,11 @@ export default function (pi: ExtensionAPI) {
             return { id, title: snap?.title, status: snap?.status };
           }),
         },
+        structuredContent: {
+          results: projectWaitResults(
+            ids.map((id) => [id, manager.view.get(id)]),
+          ),
+        },
       };
     },
 
@@ -627,6 +674,7 @@ export default function (pi: ExtensionAPI) {
     name: "subagent_cancel",
     label: "Cancel Subagents",
     description: SUBAGENT_CANCEL_TOOL_DESCRIPTION,
+    outputSchema: cancelOutputSchema,
     parameters: Type.Object({
       ids: Type.Array(Type.String(), {
         description: SUBAGENT_CANCEL_PARAMETER_DESCRIPTIONS.ids,
@@ -672,6 +720,14 @@ export default function (pi: ExtensionAPI) {
             status: entry.status,
           })),
         },
+        structuredContent: {
+          results: report.map((entry) => ({
+            id: entry.id,
+            title: entry.title,
+            status: entry.status,
+            cancelled: entry.cancelled,
+          })),
+        },
       };
     },
 
@@ -703,6 +759,7 @@ export default function (pi: ExtensionAPI) {
     name: "subagent_send",
     label: "Send To Subagent",
     description: SUBAGENT_SEND_TOOL_DESCRIPTION,
+    outputSchema: sendOutputSchema,
     parameters: Type.Object({
       id: Type.String({
         description: SUBAGENT_SEND_PARAMETER_DESCRIPTIONS.id,
@@ -753,6 +810,12 @@ export default function (pi: ExtensionAPI) {
           title: snap.title,
           status: running ? "running" : "restarting",
         },
+        structuredContent: {
+          id: snap.id,
+          title: snap.title,
+          status: running ? "running" : "restarting",
+          message: text,
+        },
       };
     },
 
@@ -784,6 +847,7 @@ export default function (pi: ExtensionAPI) {
     name: "subagent_check",
     label: "Check Subagent",
     description: SUBAGENT_CHECK_TOOL_DESCRIPTION,
+    outputSchema: checkOutputSchema,
     parameters: Type.Object({
       id: Type.String({
         description: SUBAGENT_CHECK_PARAMETER_DESCRIPTIONS.id,
@@ -833,6 +897,7 @@ export default function (pi: ExtensionAPI) {
           status: snap.status,
           turns: snap.turns,
         },
+        structuredContent: projectCheck(snap, text),
       };
     },
 
@@ -868,6 +933,7 @@ export default function (pi: ExtensionAPI) {
     name: "subagent_list",
     label: "List Subagents",
     description: SUBAGENT_LIST_TOOL_DESCRIPTION,
+    outputSchema: listOutputSchema,
     parameters: Type.Object({}),
     async execute() {
       const manager = await getManager();
@@ -885,6 +951,9 @@ export default function (pi: ExtensionAPI) {
             harness: snap.backend,
             status: snap.status,
           })),
+        },
+        structuredContent: {
+          subagents: subs.map((snap) => projectSubagent(snap)),
         },
       };
     },

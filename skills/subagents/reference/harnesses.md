@@ -23,7 +23,7 @@ Prefer `provider/model-id`; a bare model id only works when unambiguous.
 | ---------------------------- | -------------------------------------- | ----------------- |
 | `openai-codex/gpt-5.6-sol`   | difficult coding work                  | `high`            |
 | `openai-codex/gpt-5.6-terra` | coding                                 | `medium`          |
-| `openai-codex/gpt-5.6-luna`  | cheap/mechanical passes; deep one-offs; bounded UI tweaks | `medium`, `xhigh`, `max` |
+| `openai-codex/gpt-6-luna`  | cheap/mechanical passes; deep one-offs; bounded UI tweaks | `medium`, `xhigh`, `max` |
 
 Thinking budgets map directly to pi thinking levels.
 
@@ -45,6 +45,8 @@ Most of the Zen catalogue returns `401 "Model is disabled"` on this account — 
 Also free and working, but unproven for real work: `laguna-s-2.1-free`, `longcat-2.0-free`, `mimo-v2.5-free`, `nemotron-3-ultra-free`.
 
 Re-check availability by spawning a trivial prompt; a disabled model fails immediately with `401 Model is disabled` rather than burning a run.
+
+`opencode/deepseek-v4.1-flash-free` and `opencode/glm-5.3-flash-free` are listed with zero prices, but OpenCode restricts them to its own CLI. Pi requests return `403 FreeTierError`. Do not route Pi children to them or silently substitute paid variants. Use the native OpenCode CLI for these models.
 
 ## Claude Code
 
@@ -74,7 +76,7 @@ Requires Claude Code to be installed and authenticated.
 
 | Model           | Recommended effort | Reach for it when                                                      |
 | --------------- | ------------------ | ---------------------------------------------------------------------- |
-| `gpt-5.6-luna`  | `high`             | bounded diff, single-file check, recon, mechanical work                 |
+| `gpt-6-luna`  | `medium`           | bounded diff, single-file check, recon, mechanical work                 |
 | `gpt-5.6-terra` | `high`             | a normal PR-sized review — the default review model                     |
 | `gpt-5.6-sol`   | `high`             | coding work, or a review where the call is hard or the blast radius big |
 
@@ -89,22 +91,22 @@ Requires the Codex CLI to be installed and authenticated.
 
 **This is the cheap workhorse harness**, not a specialist one: `recon`, `mechanical_edit`, and `scoped_implementation` all route here, because the Cursor plan is flat and every run on it is a run that did not spend the Codex cap.
 
-**Best default:** `cursor-grok-4.6-fast` for read and mechanical work; `cursor-grok-4.6` (no `-fast`) at `xhigh` when the work needs depth. `composer-2.5` is Cursor's own model — reach for it when grok is struggling with Cursor-specific tooling.
+**Best default:** `grok-4.7-fast` for read and mechanical work; `grok-4.7` (no `-fast`) for scoped implementation. Use medium effort for both, high for a concrete reasoning challenge, and higher tiers only on an explicit override. `composer-2.5` is Cursor's own model — reach for it when grok is struggling with Cursor-specific tooling.
 
-**Cursor encodes reasoning effort and fast mode in the model id, not in flags.** There is no `--effort` and no `--fast`; `cursor-grok-4.6` on its own is not a real id. The extension resolves a family plus `reasoning_effort` into the real id, so pass the family and let it do that.
+**Cursor encodes reasoning effort and fast mode in the model id, not in flags.** There is no `--effort` and no `--fast`; `grok-4.7` on its own is not a real id. The extension resolves a family plus `reasoning_effort` into the real id, so pass the family and let it do that.
 
 | Model                  | Effort tiers?                    | Recommended effort | Resolves to                 |
 | ---------------------- | -------------------------------- | ------------------ | --------------------------- |
-| `cursor-grok-4.6`      | `low`/`medium`/`high`/`xhigh`    | `xhigh`            | `cursor-grok-4.6-xhigh`     |
-| `cursor-grok-4.6-fast` | `low`/`medium`/`high`/`xhigh`    | `high`             | `cursor-grok-4.6-high-fast` |
+| `grok-4.7`      | `low`/`medium`/`high`/`xhigh`    | `medium`           | `grok-4.7-medium`     |
+| `grok-4.7-fast` | `low`/`medium`/`high`/`xhigh`    | `medium`           | `grok-4.7-medium-fast` |
 | `composer-2.5`         | no — effort is ignored           | —                  | `composer-2.5`              |
 | `composer-2.5-fast`    | no — effort is ignored           | —                  | `composer-2.5-fast`         |
 | `cursor-grok-4.5`      | `high` only — the lower tiers were retired | `high`   | `cursor-grok-4.5-high`      |
 
-**Fast mode is a `-fast` suffix on the `model` string** — there is no separate parameter. Append it to the family (`cursor-grok-4.6-fast`) or to a full id (`cursor-grok-4.6-low-fast`). Fast trades depth for latency; use it for reads and mechanical passes, not for judgment.
+**Fast mode is a `-fast` suffix on the `model` string** — there is no separate parameter. Append it to the family (`grok-4.7-fast`) or to a full id (`grok-4.7-low-fast`). Fast trades depth for latency; use it for reads and mechanical passes, not for judgment.
 
-For grok 4.6 the thinking budgets map `off`/`minimal`/`low` → `low`, `medium` → `medium`, `high` → `high`, `xhigh`/`max` → `xhigh`; omitting effort gives `medium`. An effort the family has no tier for walks to the nearest one it does have, which is what keeps an inherited `max` from failing a 4.5 spawn. A tier you *spell out* that does not exist still fails with the valid ids listed, because that is a mistake about the id, not an inherited default.
+For grok 4.7 the thinking budgets map `off`/`minimal`/`low` → `low`, `medium` → `medium`, `high` → `high`, `xhigh`/`max` → `xhigh`. The spawn tool supplies effort explicitly, defaulting to medium without a task class; the low-level Cursor backend still falls back to high if called without effort. Explicit 4.6 requests remain supported with their previous `medium` default. An effort the family has no tier for walks to the nearest one it does have, which is what keeps an inherited `max` from failing a 4.5 spawn. A tier you *spell out* that does not exist still fails with the valid ids listed, because that is a mistake about the id, not an inherited default.
 
-`grok`, `grok-4.6`, and `composer` are accepted as shorthand — bare `grok` means 4.6. A full id is passed through unchanged, as is Cursor's bracket-override form (`'claude-opus-4-8[context=1m,effort=high,fast=false]'`).
+`grok`, `grok-4.7`, and `composer` are accepted as shorthand — bare `grok` means 4.7. A full id is passed through unchanged, as is Cursor's bracket-override form (`'claude-opus-4-8[context=1m,effort=high,fast=false]'`).
 
 Requires the Cursor Agent CLI (`cursor-agent`) to be installed and logged in. Refresh the id table with `cursor-agent --list-models`.

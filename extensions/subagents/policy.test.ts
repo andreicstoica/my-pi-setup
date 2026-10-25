@@ -84,6 +84,20 @@ test("leaves MCP servers outside the read-only set untouched", () => {
   assert.equal(evaluateToolUse("mcp__tldraw__create_shape", {}), undefined);
 });
 
+test("native MCP names keep read-only and metered-call restrictions", () => {
+  for (const tool of [
+    "mcp__linear__create_issue",
+    "mcp__sentry__update_issue",
+    "mcp__figma__use_figma",
+    "mcp__liftoff__ask",
+    "mcp__liftoff__tool_ask",
+  ]) {
+    assert.ok(evaluateToolUse(tool, {}), `${tool} should be denied`);
+  }
+  assert.equal(evaluateToolUse("mcp__linear__list_issues", {}), undefined);
+  assert.equal(evaluateToolUse("mcp__liftoff__tool_sql_query", {}), undefined);
+});
+
 // --- aws parsing ----------------------------------------------------------
 
 test("finds aws invocations behind shell operators and wrappers", () => {

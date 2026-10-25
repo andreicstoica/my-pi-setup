@@ -1,5 +1,10 @@
 /** All model-facing strings for the subagents tools. */
-import { MAX_RUNNING } from "./domain.ts";
+import {
+  DEFAULT_MAX_TURNS,
+  DEFAULT_TIMEOUT_MS,
+  MAX_RUNNING,
+  type SpawnTask,
+} from "./domain.ts";
 
 /**
  * Describes subagent_spawn and the fixed concurrency cap. Harness, model, and
@@ -9,7 +14,7 @@ import { MAX_RUNNING } from "./domain.ts";
  * every request. The `harness` parameter description carries the short version.
  */
 export const SUBAGENT_SPAWN_TOOL_DESCRIPTION =
-  "Spawn a background subagent: a fully autonomous, headless agent with its own context window and the chosen harness's normal host permissions. Fire-and-forget — returns an id immediately, and the subagent's final output is queued back to you when it settles, or collect it with subagent_wait. Children cannot see this conversation, ask the user, or spawn further agents, so the prompt must be self-contained. Set `task_class` and let it derive the harness, model, and effort; read the `subagents` skill when no class fits or you mean to override one. Trusted working directories only. Max " +
+  "Delegate a bounded, independent task when parallel work or isolating noisy research saves time or context. Handle small fixes and sequential work in the parent instead. Returns an id immediately; results arrive automatically or through subagent_wait. Children cannot see this conversation, ask the user, or spawn further agents. Set task_class for harness, model, and effort. Each run stops at max_turns or timeout_seconds and returns incomplete output as an error, not success. Trusted working directories only. Max " +
   MAX_RUNNING +
   " running at once.";
 
@@ -19,7 +24,8 @@ export const SUBAGENT_SPAWN_PROMPT_SNIPPET =
 
 /** Guides the parent model to delegate standalone tasks and avoid unnecessary blocking waits. */
 export const SUBAGENT_SPAWN_PROMPT_GUIDELINES = [
-  "Use subagent_spawn to delegate self-contained tasks that can run in the background; give it a complete, standalone prompt.",
+  "Work in the parent by default. Delegate only an independent task that benefits from parallel execution or keeping noisy research out of the parent context. A small fix does not need a recon/implementation/review chain.",
+  "Do not duplicate a child's assigned work while it runs. Keep dependent edits in one owner; use parallel tool calls rather than extra agents for simple independent reads.",
   "Classify the work with task_class rather than picking a harness and model yourself; there is no default-preferred harness, and the class encodes which one suits the task. Override a field only for a reason you can state.",
   "After subagent_spawn, keep working; results arrive automatically. Only call subagent_wait when you cannot proceed without the result.",
   "A subagent whose report is nearly right, or one you can see drifting, takes subagent_send — reusing its context costs far less than re-spawning it. A subagent whose context is wrong takes subagent_cancel and a better prompt.",
@@ -37,9 +43,11 @@ export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
   workingDir:
     "Trusted working directory for the autonomous child (default: current working directory)",
   model:
-    'Model hint, interpreted by the chosen harness (pi: "provider/model-id" or model id; claude: model alias like "sonnet"/"opus"; codex: model slug; cursor: "composer-2.5" or "cursor-grok-4.5", with an optional "-fast" suffix for fast mode — cursor encodes both effort and fast mode in the id, there is no fast flag). Omit for the harness default (pi inherits the current model).',
+    'Model hint, interpreted by the chosen harness (pi: "provider/model-id" or model id; claude: model alias like "sonnet"/"opus"; codex: model slug; cursor: "composer-2.5" or "grok-4.7", with an optional "-fast" suffix for fast mode — cursor encodes both effort and fast mode in the id, there is no fast flag). Omit for the harness default (pi inherits the current model).',
   reasoningEffort:
-    "Reasoning effort on a shared scale; the harness maps it to its nearest native equivalent (pi thinking level, codex reasoning effort, claude thinking budget, cursor model-id tier). Choose per task rather than defaulting high: use low for mechanical or well-specified work (run a command, apply a known edit, collect facts), medium for ordinary implementation and investigation, and high or above only when the task genuinely turns on hard reasoning — an ambiguous bug, a design trade-off, an adversarial review. Omit for the harness default (pi inherits the current level).",
+    "Shared effort scale, mapped to the backend. Routine work defaults to medium; high is for hard reasoning, planning, or adversarial review. Higher levels require an explicit reason or user request. Overrides the task class; without a class, defaults to medium.",
+  maxTurns: `Maximum finalized assistant messages per run (default ${DEFAULT_MAX_TURNS}). Increase only for an explicitly larger task. Reaching the limit interrupts the child and returns partial output, never a clean result.`,
+  timeoutSeconds: `Maximum runtime per run in seconds (default ${DEFAULT_TIMEOUT_MS / 1_000}). Use background terminals for CI and long commands instead of keeping a child reasoning or polling.`,
 };
 
 /**
@@ -54,13 +62,8 @@ export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
 export const CHILD_REPORT_CONTRACT =
   "---\n" +
   "Report contract: your final message IS the result handed to the orchestrator, which cannot see this transcript. Lead with the answer — no preamble, no narration of the steps you took. Give concrete file paths, symbols, and commands rather than descriptions of them. State plainly anything you could not verify, could not do, or deliberately left undone; a gap you name is useful, a gap you omit is a bug. If you were asked a question, answer it in the first sentence.\n" +
-  // On claude (and assumed on codex/cursor) a child that fills its window is
-  // killed and returns nothing at all, losing every finding it had already made.
-  // pi children are the exception: they are real AgentSessions and auto-compact
-  // by default. The line is sent to every harness anyway — landing early beats a
-  // summarization round that drops the file:line detail the report exists for —
-  // so it is worded as an instruction, not as a claim about the harness.
-  "Context: do not count on being compacted. If you notice your context filling, stop exploring and report what you have, marked as partial with the specific next step named — a partial report is useful, a run that dies full is worth nothing.";
+  "Work: make the smallest change that meets the assigned behavior. Preserve unrelated loading, request concurrency, state, and public contracts. Do not add abstractions, adjacent fixes, or extra review rounds without a concrete need. Stop when the requested result and focused verification are complete. After two attempts at the same failure without new evidence, report the blocker instead of retrying.\n" +
+  "Checkpoint: before context or runtime runs out, finish with a partial report naming verified findings, files changed, checks run, blockers, and the next action. Do not rely on compaction to preserve the result.";
 
 /**
  * Composes the model-authored task prompt with the task class's constraint (if
@@ -68,11 +71,18 @@ export const CHILD_REPORT_CONTRACT =
  * contract and below the task: it scopes the work, so it has to be read as part
  * of the instructions rather than as reporting advice.
  */
-export function buildChildPrompt(prompt: string, constraint?: string) {
+export function buildChildPrompt(
+  prompt: string,
+  constraint?: string,
+  limits?: Pick<SpawnTask, "maxTurns" | "timeoutMs">,
+) {
   const body = constraint
     ? `${prompt.trim()}\n\n${constraint.trim()}`
     : prompt.trim();
-  return `${body}\n\n${CHILD_REPORT_CONTRACT}`;
+  const budget = limits
+    ? `\nRun budget: at most ${limits.maxTurns ?? DEFAULT_MAX_TURNS} assistant messages or ${(limits.timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1_000} seconds per run. Return the checkpoint before the limit; the harness interrupts at the limit.`
+    : "";
+  return `${body}\n\n${CHILD_REPORT_CONTRACT}${budget}`;
 }
 
 /**

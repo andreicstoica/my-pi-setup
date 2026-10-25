@@ -10,12 +10,18 @@ sessions/
 # Root-anchored: the extension at extensions/memory/ IS committed, its data is not.
 /memory/
 /workflows/
+/artifacts/
 auth.json
+mcp-auth.json
+mcp-cache.json
+mcp-project-approvals.json
+mcp.json
 settings.json
 mcp.json.disabled
 trust.json
 models.json
 models-store.json
+extensions/pi-better-compaction/config.json
 extensions/summaries/config.private.json
 extensions/summaries/config.private.json.*.tmp
 

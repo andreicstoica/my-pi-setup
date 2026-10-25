@@ -42,6 +42,8 @@ import type {
 import {
   BackendUnavailableError,
   ConcurrencyLimitError,
+  DEFAULT_MAX_TURNS,
+  DEFAULT_TIMEOUT_MS,
   MAX_RUNNING,
   SendError,
   SpawnError,
@@ -107,6 +109,13 @@ interface Entry {
   /** Idle restart dispatched but RunStarted not folded yet; counts as running
    * so concurrent restarts cannot race past the cap. */
   restarting?: boolean;
+  readonly maxTurns: number;
+  readonly timeoutMs: number;
+  runStartTurns: number;
+  runSerial: number;
+  timer?: ReturnType<typeof setTimeout>;
+  budgetStopReason?: string;
+  partialText: string;
 }
 
 // --- Read model ----------------------------------------------------------------
@@ -310,6 +319,20 @@ const makeManager = Effect.gen(function* () {
     const s = entry.snapshot;
     entry.restarting = false;
     if (s.status !== "running") return;
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.timer = undefined;
+    if (entry.budgetStopReason) {
+      outcome = {
+        _tag: "Failed",
+        errorText: `${entry.budgetStopReason}. Partial result only; inspect the transcript and working tree before resuming with subagent_send.`,
+        partialText:
+          (outcome._tag === "Completed"
+            ? outcome.finalText
+            : outcome.partialText) ||
+          s.liveAssistant?.text ||
+          entry.partialText,
+      };
+    }
     s.settledAt = Date.now();
     switch (outcome._tag) {
       case "Completed":
@@ -358,6 +381,8 @@ const makeManager = Effect.gen(function* () {
         s.status = "running";
         s.settledAt = undefined;
         s.errorText = undefined;
+        s.finalText = "";
+        startBudget(entry);
         break;
       case "RunSettled":
         settle(entry, event.outcome);
@@ -401,7 +426,21 @@ const makeManager = Effect.gen(function* () {
           ),
         });
         s.liveAssistant = undefined;
+        entry.partialText =
+          event.parts
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n")
+            .slice(0, FINAL_TEXT_MAX_LENGTH) || entry.partialText;
         s.turns++;
+        // A final answer can occupy the last allowed message without starting more work.
+        if (
+          s.turns - entry.runStartTurns > entry.maxTurns ||
+          (s.turns - entry.runStartTurns === entry.maxTurns &&
+            event.parts.some((part) => part.type === "toolCall"))
+        ) {
+          stopForBudget(entry, `Turn limit reached (${entry.maxTurns})`);
+        }
         break;
       case "ToolStart":
         entry.liveToolMap.set(event.toolId, {
@@ -528,8 +567,22 @@ const makeManager = Effect.gen(function* () {
           session,
           scope,
           liveToolMap: new Map(),
+          maxTurns: task.maxTurns ?? DEFAULT_MAX_TURNS,
+          timeoutMs: task.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          runStartTurns: 0,
+          runSerial: 0,
+          partialText: "",
         };
         entries.set(id, entry);
+        startBudget(entry);
+        yield* Scope.provide(
+          Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              if (entry.timer) clearTimeout(entry.timer);
+            }),
+          ),
+          scope,
+        );
 
         // Pump: fold the event stream into the snapshot. Tied to the entry
         // scope, so closing the scope stops it. If the stream ends while the
@@ -595,19 +648,26 @@ const makeManager = Effect.gen(function* () {
   const abortEntry = (entry: Entry) =>
     Effect.gen(function* () {
       if (entry.snapshot.status !== "running") return;
+      const serial = entry.runSerial;
       const graceful = yield* entry.session.interrupt.pipe(
         Effect.timeout(STOP_TIMEOUT_MS),
         Effect.result,
       );
-      if (Result.isFailure(graceful)) {
+      if (
+        Result.isFailure(graceful) &&
+        entry.runSerial === serial &&
+        entry.snapshot.status === "running"
+      ) {
         // Settle before closing the scope so the pump's stream-ended
         // fallback ("Backend event stream ended unexpectedly") cannot win
         // the race and report the wrong terminal reason.
         yield* Effect.sync(() => {
-          settle(entry, { _tag: "Interrupted" });
-          entry.snapshot.errorText =
-            "Abort deadline exceeded; session was force-disposed";
-          notify(entry.snapshot.id);
+          settle(entry, {
+            _tag: "Failed",
+            errorText: "Abort deadline exceeded; session was force-disposed",
+            partialText:
+              entry.snapshot.liveAssistant?.text || entry.partialText,
+          });
         });
         // Bound the close like disposeAll does: a stuck backend finalizer
         // must not hang cancel after the run is already settled.
@@ -617,6 +677,45 @@ const makeManager = Effect.gen(function* () {
         );
       }
     });
+
+  const stopForBudget = (entry: Entry, reason: string) => {
+    if (entry.snapshot.status !== "running" || entry.budgetStopReason) return;
+    entry.budgetStopReason = reason;
+    const serial = entry.runSerial;
+    const fiber = runDetached(
+      abortEntry(entry).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (
+              entry.runSerial === serial &&
+              entry.snapshot.status === "running"
+            ) {
+              settle(entry, { _tag: "Interrupted" });
+            }
+          }),
+        ),
+      ),
+    );
+    cleanups.add(fiber);
+    fiber.addObserver(() => cleanups.delete(fiber));
+  };
+
+  const startBudget = (entry: Entry) => {
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.runStartTurns = entry.snapshot.turns;
+    entry.runSerial++;
+    entry.budgetStopReason = undefined;
+    entry.partialText = "";
+    entry.timer = setTimeout(
+      () =>
+        stopForBudget(
+          entry,
+          `Time limit reached (${entry.timeoutMs / 1_000}s)`,
+        ),
+      entry.timeoutMs,
+    );
+    entry.timer.unref();
+  };
 
   const cancel = (ids: ReadonlyArray<string>) =>
     Effect.suspend(() => {

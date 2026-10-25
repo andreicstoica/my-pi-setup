@@ -12,7 +12,7 @@ const create = (...subjects: string[]): TodoMutation => ({
   create: subjects.map((subject) => ({ subject })),
 });
 
-test("create assigns sequential ids and starts everything pending", () => {
+test("create assigns sequential ids and starts the first ready item", () => {
   const { state, createdIds } = applyMutation(
     emptyTodoState(),
     create("a", "b"),
@@ -22,9 +22,67 @@ test("create assigns sequential ids and starts everything pending", () => {
   assert.deepEqual(
     state.items.map((t) => [t.id, t.subject, t.status]),
     [
-      ["1", "a", "pending"],
+      ["1", "a", "in_progress"],
       ["2", "b", "pending"],
     ],
+  );
+});
+
+test("completing the active item automatically starts the next ready item", () => {
+  let state = applyMutation(emptyTodoState(), create("a", "b")).state;
+  state = applyMutation(state, {
+    update: [{ id: "1", status: "completed" }],
+  }).state;
+
+  assert.deepEqual(
+    state.items.map((t) => t.status),
+    ["completed", "in_progress"],
+  );
+});
+
+test("cancelling the active item automatically starts the next ready item", () => {
+  let state = applyMutation(emptyTodoState(), create("a", "b")).state;
+  state = applyMutation(state, {
+    update: [{ id: "1", status: "cancelled" }],
+  }).state;
+
+  assert.deepEqual(
+    state.items.map((t) => t.status),
+    ["cancelled", "in_progress"],
+  );
+});
+
+test("automatic progression skips blocked items", () => {
+  let state = applyMutation(emptyTodoState(), {
+    create: [
+      { subject: "a" },
+      { subject: "b", blockedBy: ["3"] },
+      { subject: "c" },
+    ],
+  }).state;
+  state = applyMutation(state, {
+    update: [{ id: "1", status: "completed" }],
+  }).state;
+
+  assert.deepEqual(
+    state.items.map((t) => t.status),
+    ["completed", "pending", "in_progress"],
+  );
+});
+
+test("grouped completion advances without bookkeeping warnings", () => {
+  let state = applyMutation(emptyTodoState(), create("a", "b", "c")).state;
+  const result = applyMutation(state, {
+    update: [
+      { id: "1", status: "completed" },
+      { id: "2", status: "completed" },
+    ],
+  });
+
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(
+    result.state.items.map((t) => t.status),
+    ["completed", "completed", "in_progress"],
   );
 });
 
@@ -87,20 +145,8 @@ test("warns on two in_progress items", () => {
   assert.match(warnings.join(), /keep exactly one/);
 });
 
-test("warns when a step jumps pending to completed", () => {
+test("active to completed is clean", () => {
   const state = applyMutation(emptyTodoState(), create("a")).state;
-  const { warnings } = applyMutation(state, {
-    update: [{ id: "1", status: "completed" }],
-  });
-
-  assert.match(warnings.join(), /pending → completed/);
-});
-
-test("pending to in_progress to completed is clean", () => {
-  let state = applyMutation(emptyTodoState(), create("a")).state;
-  state = applyMutation(state, {
-    update: [{ id: "1", status: "in_progress" }],
-  }).state;
   const { warnings } = applyMutation(state, {
     update: [{ id: "1", status: "completed" }],
   });
@@ -190,5 +236,5 @@ test("mutations never alias prior state", () => {
   const first = applyMutation(emptyTodoState(), create("a")).state;
   applyMutation(first, { update: [{ id: "1", status: "completed" }] });
 
-  assert.equal(first.items[0]?.status, "pending");
+  assert.equal(first.items[0]?.status, "in_progress");
 });

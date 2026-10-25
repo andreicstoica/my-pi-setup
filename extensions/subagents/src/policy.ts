@@ -1,49 +1,6 @@
 /**
- * Capability policy for headless subagents.
- *
- * Headless children run with `permissionMode: "bypassPermissions"` because they
- * have no UI to answer approval prompts — that is deliberate, and it stays:
- * subagents are meant to write code autonomously. But bypassing *approval* is
- * not the same as wanting *unlimited* capability, and two classes of call
- * should never happen unattended:
- *
- * 1. Writes through MCP servers we only ever want to read from (Sentry, Linear,
- *    Figma). Reads are the whole point of routing those tasks to a claude
- *    child; mutating a tracker or a design file is not.
- * 2. Mutating `aws` CLI calls. Reads are useful for diagnosis; a stray
- *    `aws s3 rm` is unrecoverable.
- *
- * These are enforced from a `PreToolUse` hook rather than `disallowedTools`,
- * because `disallowedTools` only removes whole tools — it cannot express
- * "Bash, but not mutating aws", and it cannot cover MCP tool names we have not
- * enumerated (Linear exposes almost nothing until it is authenticated).
- * A PreToolUse `permissionDecision: "deny"` is evaluated independently of
- * `permissionMode`, so it holds even under bypass.
- *
- * Both lists are deliberately *allow-list shaped* where the vocabulary is open
- * ended (aws has hundreds of verbs), and deny-list shaped where it is closed.
- *
- * COVERAGE — this only applies to the `claude` backend. `PreToolUse` is a
- * Claude Agent SDK hook, and `backends/claude.ts` is the only caller of
- * `evaluateToolUse`. The other harnesses are separate CLIs with their own
- * permission models and no equivalent pre-tool callback on the protocols they
- * expose:
- *
- * - codex   — `codex app-server`, spawned with `approvalPolicy: "never"` and
- *             `sandbox: "danger-full-access"`.
- * - cursor  — `cursor-agent -p`, spawned with `--force`; its stream-json output
- *             is a one-way event feed, so a tool call can be *observed* but not
- *             intercepted. Cursor's own allow/deny config is the only guard.
- * - pi      — in-process child session; pi exposes no per-spawn tool policy.
- *
- * Do not describe this module as a global guard. For those harnesses the only
- * real control is the spawn prompt, and read-only intent has to be written into
- * it explicitly.
- *
- * The destructive-command rules themselves live in
- * `shared/destructive-commands.ts` because this session's own `bash` calls need
- * the same detection (see the `bash-guard` extension). Only the verdict differs:
- * a child is denied outright, this session gets a confirmation prompt.
+ * Headless Claude children cannot answer approval dialogs. Restricted MCP
+ * and destructive shell calls must still be denied before execution.
  */
 
 import {
@@ -54,45 +11,12 @@ import {
   unquote,
 } from "../../shared/destructive-commands.ts";
 
-export { findDestructiveCommand };
+import {
+  evaluateMcpToolUse,
+  parseMcpToolName,
+} from "../../shared/mcp-policy.ts";
 
-/**
- * MCP servers whose write tools are refused. Matched against the server
- * segment of an `mcp__<server>__<tool>` tool name.
- */
-export const READ_ONLY_MCP_SERVERS: ReadonlySet<string> = new Set([
-  "claude_ai_Sentry",
-  "claude_ai_Linear",
-  "plugin_figma_figma",
-]);
-
-/**
- * Verbs that mutate. Applied to the tool segment so servers we cannot
- * enumerate ahead of time are still covered. `execute_*` is included because
- * generic escape-hatch tools (e.g. Sentry's `execute_sentry_tool`) can perform
- * writes the name does not otherwise reveal.
- */
-const MCP_WRITE_VERB =
-  /(^|_)(create|update|delete|remove|set|write|send|upload|post|patch|put|archive|move|duplicate|rename|assign|comment|execute|generate|add|apply|import|export)(_|$)/;
-
-/**
- * Write tools whose names carry no write verb, so the pattern above misses
- * them. `use_figma` is the important one: it executes arbitrary JavaScript in
- * the Figma file context, making it the most powerful mutation of the set.
- */
-const EXPLICIT_WRITE_TOOLS: ReadonlySet<string> = new Set([
-  "use_figma",
-  "use_figjam",
-]);
-
-/** Parsed `mcp__server__tool` name, or undefined for non-MCP tools. */
-export function parseMcpToolName(toolName: string) {
-  if (!toolName.startsWith("mcp__")) return undefined;
-  const rest = toolName.slice("mcp__".length);
-  const separator = rest.indexOf("__");
-  if (separator === -1) return { server: rest, tool: "" };
-  return { server: rest.slice(0, separator), tool: rest.slice(separator + 2) };
-}
+export { findDestructiveCommand, parseMcpToolName };
 
 /**
  * `aws` operations that only read. Everything else on a read-only-by-policy
@@ -161,15 +85,7 @@ export function classifyAwsInvocation(args: readonly string[]) {
  * the call proceed untouched.
  */
 export function evaluateToolUse(toolName: string, toolInput: unknown) {
-  const mcp = parseMcpToolName(toolName);
-  if (mcp) {
-    const isWrite =
-      MCP_WRITE_VERB.test(mcp.tool) || EXPLICIT_WRITE_TOOLS.has(mcp.tool);
-    if (READ_ONLY_MCP_SERVERS.has(mcp.server) && isWrite) {
-      return `${mcp.server} is configured read-only for subagents; "${mcp.tool}" looks like a write. Report the finding back instead of mutating it.`;
-    }
-    return undefined;
-  }
+  if (parseMcpToolName(toolName)) return evaluateMcpToolUse(toolName);
 
   if (toolName !== "Bash") return undefined;
 

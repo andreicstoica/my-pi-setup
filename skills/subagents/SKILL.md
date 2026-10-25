@@ -7,28 +7,33 @@ description: Route and manage delegated work across Pi, Claude, Codex, and Curso
 
 Each subagent is headless, has its own context window, cannot see the parent conversation, cannot ask the user, and cannot spawn subagents or workflows. Give every child a self-contained prompt with paths, constraints, and the expected report.
 
+## Decide whether to delegate
+
+Work in the parent by default. Delegate an independent task when it can run alongside useful parent work, isolate noisy research, or provide a requested second opinion. A small fix or sequential investigation does not need a recon/implementation/review chain. Use parallel tool calls for simple independent reads.
+
+Give each child one owner and one finish line. Do not repeat its assigned work in the parent. Keep dependent edits with one owner; do not split them merely to create parallelism. An inexpensive model still costs startup, context, review, and coordination time.
+
 ## Pick a task_class
 
 `subagent_spawn` takes a `task_class`. `extensions/subagents/src/routing.ts` derives the harness, model, and effort from it and appends the row's cap to the child's prompt. Pass the class; do not retype the model id.
 
 | `task_class`             | The work                                                       | Harness / model                    | Effort   | Cap the class enforces in the child prompt                          |
 | ------------------------ | -------------------------------------------------------------- | ---------------------------------- | -------- | ------------------------------------------------------------------- |
-| `recon`                  | locate files, trace a flow, summarize prior art                | `cursor` / `cursor-grok-4.6-fast`  | `high`   | read-only                                                           |
+| `recon`                  | locate files, trace a flow, summarize prior art                | `cursor` / `grok-4.7-fast`  | `medium`   | read-only                                                           |
 | `bulk_scan`              | one slice of a wide fan-out — same question over many paths    | `pi` / `opencode/deepseek-v4-flash`| `medium` | read-only; only the named paths; findings as `file:line`, not prose |
-| `mechanical_edit`        | apply a stated diff, rename, mirror a file, delete dead code   | `cursor` / `cursor-grok-4.6-fast`  | `high`   | ≤3 files, all named in the prompt; zero design decisions left open  |
-| `scoped_implementation`  | one component or endpoint, behavior fully specified            | `cursor` / `cursor-grok-4.6`       | `xhigh`  | ≤8 files; behavior stated, not just the goal                        |
-| `ui_tweak`               | frontend, visual, or interaction work — polish, animation, layout | `claude` / `opus`               | `high`   | ≤8 files; preserve existing patterns and tokens                     |
+| `mechanical_edit`        | apply a stated diff, rename, mirror a file, delete dead code   | `cursor` / `grok-4.7-fast`  | `medium`   | ≤3 files, all named in the prompt; zero design decisions left open  |
+| `scoped_implementation`  | one component or endpoint, behavior fully specified            | `cursor` / `grok-4.7`       | `medium`  | ≤8 files; behavior stated, not just the goal                        |
+| `ui_tweak`               | frontend, visual, or interaction work — polish, animation, layout | `claude` / `opus`               | `medium`   | ≤8 files; preserve existing patterns and tokens                     |
 | `open_implementation`    | vague guidance, decomposition, or plan orchestration           | `claude` / `fable`                 | `high`   | report discrete steps, open questions, and judgment calls            |
 | `mcp_dependent`          | Linear, Figma, Sentry, Notion, Liftoff prod                    | `claude` / `sonnet`                | `medium` | fetch and report; no implementing, no MCP writes                    |
 | `review`                 | is this right, what's risky, what's missing                    | `codex` / `gpt-5.6-terra`          | `high`   | read-only, second opinion not second author, >80% confidence        |
-| `deep_question`          | one hard problem, no breadth                                   | `pi` / `openai-codex/gpt-5.6-luna` | `xhigh`  | read-only; answer the one question, do not broaden                  |
+| `deep_question`          | one hard problem, no breadth                                   | `pi` / `openai-codex/gpt-6-luna` | `high`  | read-only; answer the one question, do not broaden                  |
 
 Pick the class from the _work_, and cap the task to what that class allows. A cheap model is not a worse version of a good one — it is a model that must be given less rope. If a task does not fit a row, split it until it does; never widen the rope instead.
 
-Two rules override the table:
+Effort defaults are medium for routine work and high for planning, review, and hard questions. Use higher effort only for a specific reason or user request; do not upgrade merely because a task has several files.
 
-- **The orchestrator is never luna.** Decomposition is the judgment most sensitive to model strength, and a bad split cannot be recovered by strong children. If the parent is on luna and the user wants real work done, say so and ask them to switch before you fan out.
-- **Splitting beats upgrading.** When a task is too big for its class, the fix is two smaller spawns, not the same prompt on a bigger model. Oversized prompts fail the same way on every model — they just cost more first.
+Split only along independent boundaries. If a task does not fit a class, narrow the deliverable or keep it in the parent instead of building a chain of handoffs. Escalate model or effort when a concrete reasoning failure warrants it, not as a substitute for scope.
 
 **Never let a `pi` spawn inherit its model.** Omitting `model` and `reasoning_effort` inherits the parent's _current_ model, and every `/model` pick and Ctrl+P cycle rewrites the global default. A `task_class` sets both, which is the reason to prefer it. A spawn without a class must pass both by hand.
 
@@ -42,10 +47,18 @@ On top of the role, every spawn that may write files states all six, or it does 
 2. **In scope** — the files it may touch, named. "Find the relevant files" is a recon task, not an edit task.
 3. **Out of scope** — what not to touch, beyond what the role already forbids.
 4. **Skills to read, by path** — subagents inherit project skills but will not find them from a terse prompt. Name them: "read `.agents/skills/database/SKILL.md` before writing the migration".
-5. **Verify** — the exact repository commands that must pass. For Liftoff frontend work use `tsc -b`, never bare `tsc --noEmit`; name the specific lint and test commands. Not "make sure it works".
+5. **Verify** — the exact focused repository commands that must pass. Use the project's current instructions for typechecking and tests. Assign shared-database tests and full-suite verification to one owner; do not run them concurrently in parent and children.
 6. **Report** — what to hand back.
 
-A prompt under ~1000 characters for an implementation task is a warning sign; the failed runs in this setup's history averaged ~900 and produced scope creep, committed lockfiles, and tests written against the implementation.
+State the stopping condition. Finish when the assigned behavior and focused checks are complete; do not add adjacent fixes, abstractions, or review rounds. Preserve existing loading, request concurrency, state, and public contracts unless changing them is the task. A complete short prompt is better than padding it to a character target.
+
+## Execution limits and checkpoints
+
+Every run defaults to **40 finalized assistant messages or 600 seconds**, whichever comes first. `max_turns` and `timeout_seconds` on `subagent_spawn` override these limits for an explicitly larger task. `subagent_send` resumes the existing context with a fresh run budget; it is not an automatic retry.
+
+Return a partial checkpoint before the limit: verified findings, files changed, checks run, blockers, and the next action. The harness interrupts at the limit and reports an error with available partial text and the saved transcript, never a clean completion. Interrupted writes are not rolled back; inspect the working tree before resuming. A hard stop cannot guarantee the child wrote a complete summary.
+
+After two attempts at the same failure without new evidence, report the blocker. Use background terminals for CI and long commands rather than dedicating a child to polling them. Do not restart a budget-limited child unchanged; narrow the remaining task or deliberately grant more time before spawning a replacement.
 
 ## Roles
 

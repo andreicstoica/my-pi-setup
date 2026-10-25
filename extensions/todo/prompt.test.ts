@@ -11,6 +11,8 @@ import {
   renderToolResult,
   renderWidgetLine,
   summarize,
+  TODO_PROMPT_GUIDELINES,
+  TODO_TOOL_DESCRIPTION,
 } from "./src/prompt.ts";
 
 const build = (...mutations: TodoMutation[]) => {
@@ -23,12 +25,20 @@ const plan = () =>
   build(
     { create: [{ subject: "a" }, { subject: "b", activeForm: "Doing b" }] },
     {
-      update: [
-        { id: "1", status: "completed" },
-        { id: "2", status: "in_progress" },
-      ],
+      update: [{ id: "1", status: "completed" }],
     },
   );
+
+test("guidance keeps todo work coarse and turn-efficient", () => {
+  const guidance = [TODO_TOOL_DESCRIPTION, ...TODO_PROMPT_GUIDELINES].join(
+    "\n",
+  );
+
+  assert.match(guidance, /4\+/);
+  assert.match(guidance, /3-5/);
+  assert.match(guidance, /same response/);
+  assert.doesNotMatch(guidance, /never batch|before starting/);
+});
 
 test("no context block when nothing is open", () => {
   assert.equal(renderContextBlock(emptyTodoState()), undefined);
@@ -51,11 +61,18 @@ test("context block lists every item and names the active one", () => {
   assert.match(block, /Currently in progress: 2\./);
 });
 
-test("context block nags when nothing is in progress", () => {
-  const block = renderContextBlock(build({ create: [{ subject: "a" }] }));
+test("context block explains when every open item is blocked", () => {
+  const block = renderContextBlock(
+    build({
+      create: [
+        { subject: "a", blockedBy: ["2"] },
+        { subject: "b", blockedBy: ["1"] },
+      ],
+    }),
+  );
 
   assert.ok(block);
-  assert.match(block, /Nothing is in_progress/);
+  assert.match(block, /No todo can start until its blockers clear/);
 });
 
 test("context block is a single line-safe string", () => {
@@ -106,7 +123,7 @@ test("cancelled items leave the denominator", () => {
     { update: [{ id: "2", status: "cancelled" }] },
   );
 
-  assert.equal(summarize(state), "0/1 done");
+  assert.equal(summarize(state), "0/1 done · 1 in progress");
 });
 
 test("tool result carries warnings back to the model", () => {
@@ -122,7 +139,12 @@ test("widget prefers activeForm over subject", () => {
 
 test("widget falls back to a pending count", () => {
   const line = renderWidgetLine(
-    build({ create: [{ subject: "a" }, { subject: "b" }] }),
+    build({
+      create: [
+        { subject: "a", blockedBy: ["2"] },
+        { subject: "b", blockedBy: ["1"] },
+      ],
+    }),
   );
 
   assert.match(line ?? "", /2 todos pending/);

@@ -60,9 +60,9 @@ test("cursor model ids resolve from family + effort + fast", () => {
     "cursor-grok-4.6-medium",
   );
   // Bare "grok" tracks the current generation.
-  assert.equal(resolveCursorModel("grok", "xhigh"), "cursor-grok-4.6-xhigh");
+  assert.equal(resolveCursorModel("grok", "xhigh"), "grok-4.7-xhigh");
   // `max` has no id; it asks for the family's top tier.
-  assert.equal(resolveCursorModel("grok", "max"), "cursor-grok-4.6-xhigh");
+  assert.equal(resolveCursorModel("grok", "max"), "grok-4.7-xhigh");
   assert.equal(resolveCursorModel("grok-4.6", "off"), "cursor-grok-4.6-low");
   assert.equal(
     resolveCursorModel("grok-4.6-fast", "high"),
@@ -94,6 +94,37 @@ test("cursor model ids resolve from family + effort + fast", () => {
     resolveCursorModel("claude-opus-4-8[effort=high,fast=false]", "low"),
     "claude-opus-4-8[effort=high,fast=false]",
   );
+});
+
+test("Grok 4.7 resolves effort and fast mode while respecting the live catalog", () => {
+  assert.equal(resolveCursorModel("grok-4.7", undefined), "grok-4.7-high");
+  assert.equal(resolveCursorModel("grok4.7", "off"), "grok-4.7-low");
+  assert.equal(
+    resolveCursorModel("cursor-grok-4.7-fast", "medium"),
+    "grok-4.7-medium-fast",
+  );
+  assert.equal(
+    resolveCursorModel("cursor-grok-4.7-low-fast", "high"),
+    "grok-4.7-low-fast",
+  );
+  assert.throws(
+    () => resolveCursorModel("grok-4.7", "high", ["cursor-grok-4.6-high"]),
+    CursorModelError,
+  );
+});
+
+test("Grok 4.7 resolves against Cursor wire IDs without the cursor prefix", () => {
+  const known = parseListModels(
+    [
+      "grok-4.7-high-fast - Grok 4.7 High Fast",
+      "grok-4.7-xhigh - Grok 4.7 Extra High",
+    ].join("\n"),
+  );
+  assert.equal(
+    resolveCursorModel("grok-4.7-fast", "high", known),
+    "grok-4.7-high-fast",
+  );
+  assert.equal(resolveCursorModel("grok", "max", known), "grok-4.7-xhigh");
 });
 
 test("invalid cursor model combinations fail loudly", () => {

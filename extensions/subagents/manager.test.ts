@@ -143,6 +143,133 @@ test("cancel interrupts a running stub subagent", async () => {
   });
 });
 
+test("turn limits return partial output and release the running slot", async () => {
+  await withManager(async (manager, runtime) => {
+    const snap = await runTool(
+      runtime,
+      manager.spawn("claude", {
+        ...task("Inspect a bounded task"),
+        maxTurns: 1,
+      }),
+    );
+    await runTool(runtime, manager.waitFor([snap.id]));
+    const partial = manager.view.get(snap.id);
+    assert.equal(partial?.status, "error");
+    assert.match(partial?.errorText ?? "", /turn limit.*partial/i);
+    assert.match(partial?.finalText ?? "", /look around first/);
+    assert.ok(partial?.transcript.some((item) => item.kind === "assistant"));
+
+    const next = await runTool(
+      runtime,
+      manager.spawn("codex", task("Another bounded task")),
+    );
+    await runTool(runtime, manager.waitFor([next.id]));
+    assert.equal(manager.view.get(next.id)?.status, "done");
+  });
+});
+
+test("runtime limits stop a child that has not produced a report", async () => {
+  await withManager(async (manager, runtime) => {
+    const snap = await runTool(
+      runtime,
+      manager.spawn("claude", {
+        ...task("Long running task"),
+        timeoutMs: 10,
+      }),
+    );
+    await runTool(runtime, manager.waitFor([snap.id]));
+    const partial = manager.view.get(snap.id);
+    assert.equal(partial?.status, "error");
+    assert.match(partial?.errorText ?? "", /time limit.*partial/i);
+    assert.doesNotMatch(partial?.finalText ?? "", /completed:/);
+  });
+});
+
+test("resuming a child gets a fresh per-run turn budget", async () => {
+  await withManager(async (manager, runtime) => {
+    const snap = await runTool(
+      runtime,
+      manager.spawn("codex", {
+        ...task("First bounded run"),
+        maxTurns: 3,
+      }),
+    );
+    await runTool(runtime, manager.waitFor([snap.id]));
+    assert.equal(manager.view.get(snap.id)?.status, "done");
+    await runTool(runtime, manager.send(snap.id, "Second bounded run"));
+    while (manager.view.get(snap.id)?.status !== "running") {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await runTool(runtime, manager.waitFor([snap.id]));
+    const done = manager.view.get(snap.id);
+    assert.equal(done?.status, "done");
+    assert.equal(done?.turns, 4);
+    assert.match(done?.finalText ?? "", /Second bounded run/);
+  });
+});
+
+test("a final result on the last allowed message remains a completion", async () => {
+  await withManager(async (manager, runtime) => {
+    const snap = await runTool(
+      runtime,
+      manager.spawn("codex", {
+        ...task("Finish at the turn boundary"),
+        maxTurns: 2,
+      }),
+    );
+    await runTool(runtime, manager.waitFor([snap.id]));
+    const done = manager.view.get(snap.id);
+    assert.equal(done?.status, "done");
+    assert.match(
+      done?.finalText ?? "",
+      /completed: Finish at the turn boundary/,
+    );
+  });
+});
+
+test("a late completion after a budget stop remains a partial result", async () => {
+  const stub = makeStubBackend({
+    backend: "claude",
+    defaultModelLabel: "claude/sonnet",
+    contextWindow: 200_000,
+    toolName: "Bash",
+    cadenceMs: 1,
+  });
+  const backend: SubagentBackend = {
+    ...stub,
+    spawn: (task) =>
+      stub.spawn(task).pipe(
+        Effect.map((session) => ({
+          ...session,
+          interrupt: Effect.sleep(100),
+        })),
+      ),
+  };
+  const runtime = ManagedRuntime.make(
+    SubagentManagerLive.pipe(
+      Layer.provide(
+        Layer.succeed(BackendRegistry, new Map([["claude", backend]])),
+      ),
+    ),
+  );
+  try {
+    const manager = await runtime.runPromise(SubagentManager);
+    const snap = await runTool(
+      runtime,
+      manager.spawn("claude", {
+        ...task("Finish during interrupt"),
+        maxTurns: 1,
+      }),
+    );
+    await runTool(runtime, manager.waitFor([snap.id]));
+    const partial = manager.view.get(snap.id);
+    assert.equal(partial?.status, "error");
+    assert.match(partial?.errorText ?? "", /turn limit.*partial/i);
+  } finally {
+    await runtime.dispose();
+  }
+});
+
 test("spawn origin propagates to ids, snapshots, and settlement", async () => {
   await withManager(async (manager, runtime) => {
     const settled: Array<{ id: string; origin: string }> = [];

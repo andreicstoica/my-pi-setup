@@ -8,10 +8,10 @@
     "test": "node --test --experimental-strip-types manager.test.ts output.test.ts prompt.test.ts result-delivery.test.ts ps.test.ts"
   },
   "dependencies": {
-    "effect": "^4.0.0-beta.99"
+    "effect": "^4.0.5"
   },
   "devDependencies": {
-    "@effect/tsgo": "^0.24.2",
+    "@effect/tsgo": "^0.55.0",
     "typescript": "^7.0.2"
   }
 }

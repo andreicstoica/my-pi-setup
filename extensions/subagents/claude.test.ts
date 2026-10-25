@@ -86,7 +86,7 @@ test(
         manager.spawn(
           "claude",
           task(
-            "Write a detailed 10,000-word essay about the history of computing.",
+            "Do not use tools or skills. Stream your answer directly in this chat. Start with the word streaming, then list the integers from 1 to 10000, one per line. Do not summarize or stop early.",
           ),
         ),
       );

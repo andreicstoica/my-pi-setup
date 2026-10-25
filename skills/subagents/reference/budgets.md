@@ -11,9 +11,9 @@ This is the whole design. Four budgets, and they are not interchangeable:
 | Claude Max              | `claude` harness (Opus, Fable)          | generous — frontend work and MCP work belong here            |
 | Codex weekly cap        | `codex` harness, and `openai-codex/…` on pi | the scarcest pool, shared between every codex spawn and every luna spawn |
 
-The rule that follows: **cheap read and edit work must never touch the Codex pool.** `openai-codex/gpt-5.6-luna` is cheap in dollars and expensive in the only currency that runs out — it draws from the same weekly cap as `review`. `deep_question` is the one remaining exception, because it is a single call, not a fan-out. A `routing.test.ts` case asserts the read/mechanical classes stay off that pool.
+The rule that follows: **cheap read and edit work must never touch the Codex pool.** `openai-codex/gpt-6-luna` is cheap in dollars and expensive in the only currency that runs out — it draws from the same weekly cap as `review`. `deep_question` is the one remaining exception, because it is a single call, not a fan-out. A `routing.test.ts` case asserts the read/mechanical classes stay off that pool.
 
-**Frontend work goes to Opus on the `claude` harness.** Visual, layout, animation, and interaction work is where model strength shows most and where a cheap model wastes the most attempts. Claude Max pays for it, so there is no reason to economize there. Use `ui_tweak` for UI polish and interaction changes with a clear target. Use `open_implementation` with Fable only when the goal needs interpretation, decomposition, or plan orchestration before implementation.
+**Frontend work goes to Opus on the `claude` harness at medium effort.** Use `ui_tweak` for UI polish and interaction changes with a clear target. Use `open_implementation` with Fable at high effort only when the goal needs interpretation, decomposition, or plan orchestration before implementation. Subscription capacity does not remove latency or coordination costs; keep small changes in the parent.
 
 ## The Codex cap
 
@@ -21,16 +21,18 @@ Codex has a hard usage budget — spend it deliberately. It is a weekly subscrip
 
 - **Scale the model to the review, not to the anxiety.** `luna` for a bounded diff or a single-file check, `terra` for a normal PR-sized review, `sol` only when the call is genuinely hard or the blast radius is large. Do not open at `sol`.
 - **One reviewer per question.** Do not fan out three codex reviewers over the same diff for consensus — that is 3× budget for a vote you did not need. If you want a second opinion on a codex verdict, take it from `claude`/`fable`; the disagreement between two different backends is worth more than agreement between two codex runs.
-- **Check the budget before a big fan-out.** `/usage` shows the codex weekly window. If it is already deep into the week's allowance, downgrade the model or route the review to `claude`/`fable` and say so, rather than silently spending the rest.
+- **Check the budget before a big fan-out.** If the Codex weekly allowance is already deep, downgrade the model or route the review to `claude`/`fable` and say so, rather than silently spending the rest.
 
 ## Per-field overrides
 
 **Overrides are per field, and the harness is special.**
 
-`model` alone re-points the class's harness — that is how the Codex budget rule above is applied (`review` + `model: gpt-5.6-luna` for a bounded diff).
+`model` alone re-points the class's harness — that is how the Codex budget rule above is applied (`review` + `model: gpt-6-luna` for a bounded diff).
 
-Overriding `harness` **drops the class's model**, because a model id belongs to one harness: `openai-codex/gpt-5.6-luna` means nothing to codex or claude. After a harness override, name the model too.
+Overriding `harness` **drops the class's model**, because a model id belongs to one harness: `openai-codex/gpt-6-luna` means nothing to codex or claude. After a harness override, name the model too.
 
-## The caps are instruction-only
+## Execution limits versus scope caps
 
-The class writes its cap into the child's prompt so it no longer depends on you remembering to, but nothing inspects the child's diff. A `recon` child that edited a file is a real failure worth reporting to the user.
+The manager enforces per-run turn and runtime limits across all backends. `max_turns` and `timeout_seconds` override the defaults of 40 assistant messages and 600 seconds. A limit reports an error with partial output, not success; inspect any edits before resuming.
+
+File-count and read-only scope caps remain instructions in the child's prompt; the manager does not inspect its diff. A `recon` child that edited a file is a real failure worth reporting to the user.

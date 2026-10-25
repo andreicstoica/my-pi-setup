@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import {
+  createCodemodeExtension,
   DefaultResourceLoader,
   getAgentDir,
   ProjectTrustStore,
@@ -17,6 +18,7 @@ export const CHILD_EXCLUDED_TOOL_NAMES = [
   "subagent_cancel",
   "subagent_check",
   "subagent_list",
+  "subagent_send",
   "workflow",
   "ask_user",
 ] as const;
@@ -43,6 +45,14 @@ export async function createChildResources(options: ChildResourceOptions) {
     cwd: options.cwd,
     agentDir,
     settingsManager,
+    extensionFactories: [
+      {
+        name: "codemode",
+        factory: createCodemodeExtension(),
+        builtin: true,
+        replaceable: true,
+      },
+    ],
     ...(options.appendSystemPrompt
       ? { appendSystemPrompt: options.appendSystemPrompt }
       : {}),

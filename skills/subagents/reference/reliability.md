@@ -1,25 +1,16 @@
 # Reliability
 
-## Context death and compaction
+## Bounded runs and partial results
 
-**Watch context, not the clock — and know which children compact.** A child that fills its window without compaction is killed and returns **nothing at all**; every finding it had already made dies with it. There is no spawn timeout either, so a subagent that looks hung is usually burning its window.
+Watch runtime, turns, and context. The manager interrupts each run after its `max_turns` or `timeout_seconds` budget (40 assistant messages or 600 seconds by default). A limit returns an error with available partial text and preserves the transcript. It does not roll back edits or prove the work is complete.
 
-| Harness  | Auto-compacts a child?                                                          |
-| -------- | ------------------------------------------------------------------------------- |
-| `pi`     | **yes** — a pi child is a real in-process `AgentSession`, and `compaction.enabled` defaults to `true` (`core/settings-manager.js` `getCompactionEnabled`). Threshold and overflow compaction both run inside the child's own prompt loop |
-| `claude` | no — Agent SDK subagents do not compact                                          |
-| `codex`  | unverified; assume no                                                            |
-| `cursor` | unverified; assume no                                                            |
+Before reaching a limit, the child must finish with a partial report: verified findings, files changed, checks run, blockers, and next action. Compaction differs across harnesses; it is not a checkpoint or a reason to keep exploring. A forced interruption preserves available output, not a guaranteed complete summary.
 
-So `bulk_scan` and `deep_question` (both pi) survive a full window at the cost of a summarization round. The children that die silently are the cursor and codex ones — `recon`, `mechanical_edit`, `scoped_implementation`, `review` — which is exactly where the cheap wide fan-out lives. Design the defenses for those.
+After a limit, inspect the working tree and transcript before continuing. Use `subagent_send` for a bounded remaining question on the same context; it starts a fresh per-run budget. Do not automatically respawn the original task. If more time is justified, create a replacement with explicit limits and the checkpoint rather than repeating exploration.
 
-Three defenses, in order of how much they save:
+If a child uses substantial context or runtime without narrowing the problem, cancel it and reassess its premise. Do not infer failure from a context percentage alone, and do not poll for progress. Results arrive automatically; `subagent_wait` is only for a genuine dependency.
 
-1. **The prompt asks the child to land early.** Every spawn carries "you will not be compacted — if your context is filling, report what you have as partial with the next step named". That converts a total loss into a usable partial, and it is the only defense that works while you are not watching. It stays on pi spawns too: landing early beats a summarization round that drops the `file:line` detail the report exists for.
-2. **`subagent_check` reports context used and turn count.** A run past **60% with no text output yet** is not going to finish cleanly: cancel it and re-spawn the work split in two, rather than re-running the same prompt.
-3. **Split before spawning.** A child dies on context because it was given breadth, not because the model was weak. `bulk_scan` exists for exactly this — five children each reading three directories will finish where one child reading fifteen dies.
-
-A wide fan-out of cheap children is affordable, which makes (3) the cheap fix it was not before. Prefer four narrow `bulk_scan` slices to one broad `recon`.
+For CI or other long external commands, let a background terminal own the wait. A child should not spend its reasoning budget polling a command.
 
 ## Sending to a running child
 
@@ -59,4 +50,4 @@ Read the domain skills it references by path: .agents/skills/{backend-patterns,f
 Check .claude/rules/ for path-specific rules (the tree only exists under .claude/, but its content is harness-neutral).
 ```
 
-Name those paths every time. Review runs on `codex`, and **codex does not discover `.agents/skills/` on its own** — claude and pi do. A codex reviewer that is only told "use the review skill" will not read it.
+Name only the relevant skill paths so the review is reproducible. Current Codex discovers user and project `.agents/skills` and inherits skills in native subagents; explicit paths identify the intended project version rather than compensating for missing discovery.

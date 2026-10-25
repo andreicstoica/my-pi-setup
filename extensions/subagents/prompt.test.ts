@@ -42,6 +42,14 @@ test("buildChildPrompt appends the report contract once", () => {
   assert.equal(composed.match(/Report contract:/g)?.length, 1);
 });
 
+test("the child sees its overridden execution budget", () => {
+  const prompt = buildChildPrompt("Inspect the migration.", undefined, {
+    maxTurns: 12,
+    timeoutMs: 90_000,
+  });
+  assert.match(prompt, /12 assistant messages or 90 seconds/);
+});
+
 test("stripReportPreamble drops lead-in ahead of a rule", () => {
   const output = [
     "Perfect! I have the complete timeline. Let me generate the final report:",

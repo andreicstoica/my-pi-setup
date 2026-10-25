@@ -127,11 +127,6 @@ export function applyMutation(
       warnings.push(`no todo with id ${patch.id}`);
       continue;
     }
-    if (patch.status === "completed" && todo.status === "pending") {
-      warnings.push(
-        `todo ${todo.id} jumped pending → completed; mark it in_progress before working on it`,
-      );
-    }
     if (patch.status === "in_progress" || patch.status === "completed") {
       const blockers = blockingIds(todo, items);
       if (blockers.length > 0)
@@ -154,6 +149,16 @@ export function applyMutation(
     for (const dep of todo.blockedBy) {
       if (!items.some((t) => t.id === dep))
         warnings.push(`todo ${todo.id} is blocked by unknown id ${dep}`);
+    }
+  }
+
+  if (!items.some((todo) => todo.status === "in_progress")) {
+    const next = items.find(
+      (todo) => todo.status === "pending" && !isBlocked(todo, items),
+    );
+    if (next) {
+      next.status = "in_progress";
+      next.updatedSeq = seq;
     }
   }
 

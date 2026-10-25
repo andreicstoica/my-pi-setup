@@ -55,8 +55,8 @@ const READ_ONLY =
 export const TASK_CLASSES = {
   recon: {
     harness: "cursor",
-    model: "cursor-grok-4.6-fast",
-    reasoningEffort: "high",
+    model: "grok-4.7-fast",
+    reasoningEffort: "medium",
     summary: "locate files, trace a flow, or summarize prior art; read-only",
     constraint: READ_ONLY,
   },
@@ -70,8 +70,8 @@ export const TASK_CLASSES = {
   },
   mechanical_edit: {
     harness: "cursor",
-    model: "cursor-grok-4.6-fast",
-    reasoningEffort: "high",
+    model: "grok-4.7-fast",
+    reasoningEffort: "medium",
     summary:
       "apply a stated diff, rename, mirror a file, or delete dead code; at most 3 named files and no open design decisions",
     constraint:
@@ -79,8 +79,8 @@ export const TASK_CLASSES = {
   },
   scoped_implementation: {
     harness: "cursor",
-    model: "cursor-grok-4.6",
-    reasoningEffort: "xhigh",
+    model: "grok-4.7",
+    reasoningEffort: "medium",
     summary:
       "one component or endpoint whose behavior is fully specified here; at most 8 files",
     constraint:
@@ -89,7 +89,7 @@ export const TASK_CLASSES = {
   ui_tweak: {
     harness: "claude",
     model: "opus",
-    reasoningEffort: "high",
+    reasoningEffort: "medium",
     summary:
       "frontend, visual, or interaction work — UI polish, animation, layout; Opus, and the Max plan pays for it; at most 8 files",
     constraint:
@@ -109,7 +109,7 @@ export const TASK_CLASSES = {
     model: "sonnet",
     reasoningEffort: "medium",
     summary:
-      "needs Linear, Figma, Sentry, Notion, or the Liftoff prod MCP — claude (sonnet) by default; codex + gpt-5.6-luna medium for Liftoff MCP work",
+      "needs Linear, Figma, Sentry, Notion, or the Liftoff prod MCP — claude (sonnet) by default; codex + gpt-6-luna medium for Liftoff MCP work",
     constraint:
       "Fetch and report. Do not implement anything off the back of what you find, and do not write through any MCP tool.",
   },
@@ -123,8 +123,8 @@ export const TASK_CLASSES = {
   },
   deep_question: {
     harness: "pi",
-    model: "openai-codex/gpt-5.6-luna",
-    reasoningEffort: "xhigh",
+    model: "openai-codex/gpt-6-luna",
+    reasoningEffort: "high",
     summary:
       "one hard question and no breadth — depth is what the high effort buys, not scope",
     constraint: `${READ_ONLY} Answer the one question asked. Do not broaden the investigation to adjacent questions, however tempting.`,
@@ -172,14 +172,15 @@ export function resolveRouting(options: {
     harness: options.harness ?? preset?.harness,
     // A caller-supplied model belongs to a caller-supplied harness. Falling
     // back to the preset's model would be wrong whenever the caller overrode
-    // the harness instead: "codex" + "openai-codex/gpt-5.6-luna" is not a
+    // the harness instead: "codex" + "openai-codex/gpt-6-luna" is not a
     // model id codex accepts.
     model:
       options.model ??
       (options.harness && options.harness !== preset?.harness
         ? undefined
         : preset?.model),
-    reasoningEffort: options.reasoningEffort ?? preset?.reasoningEffort,
+    reasoningEffort:
+      options.reasoningEffort ?? preset?.reasoningEffort ?? "medium",
     constraint: preset?.constraint,
   };
 }

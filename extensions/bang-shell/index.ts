@@ -96,10 +96,7 @@ export function isShellMode(text: string) {
  * swapping that for one render is enough — no re-implementing the frame. The
  * swap is restored in `finally` because the same instance renders normal turns.
  *
- * Composes with editor-cursor, which also wraps `Editor.prototype.render`:
- * each patch wraps whatever it found at load time, so both effects survive
- * regardless of load order. The marker property keeps a reload from stacking
- * the same wrapper twice.
+ * The marker property keeps a reload from stacking the same wrapper twice.
  */
 function patchShellModeBorder(getUI: () => ExtensionUIContext | undefined) {
   type RenderFn = (width: number) => string[];
