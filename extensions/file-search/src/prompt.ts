@@ -9,6 +9,7 @@ export const FD_PROMPT_SNIPPET =
 export const FD_PROMPT_GUIDELINES = [
   "Use fd as the primary tool for discovering files and directories by name, extension, or glob instead of bash with find or ls -R.",
   "Use rg instead of fd when searching file contents rather than file names.",
+  "Resolve relative paths from the session working directory, not the last bash cd. Discover an uncertain path from a known parent before batching calls that depend on it.",
   "Keep using bash for complex multi-step workflows that pipe or post-process file listings.",
 ];
 
@@ -33,6 +34,8 @@ export const RG_PROMPT_SNIPPET =
 export const RG_PROMPT_GUIDELINES = [
   "Use rg as the primary tool for searching file contents instead of bash with grep.",
   "Use fd instead of rg when looking for files by name rather than content.",
+  "Discover uncertain paths with fd from a known directory before searching them; relative paths resolve from the session working directory, not the last bash cd.",
+  "In Codemode, separate path discovery from calls that depend on its results. Batch only independent searches on verified paths; use Promise.allSettled when independent calls should continue after one fails, and report each failure.",
   "Set fixed_strings on rg when searching for literal code snippets containing regex metacharacters.",
   "Keep using bash for complex multi-step workflows that combine searching with other commands.",
 ];

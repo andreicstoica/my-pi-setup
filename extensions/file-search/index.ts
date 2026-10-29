@@ -283,8 +283,15 @@ export default function fileSearchTools(pi: ExtensionAPI) {
       return new Text(text, 0, 0);
     },
 
-    renderResult(result, { expanded, isPartial }, theme) {
+    renderResult(result, { expanded, isPartial }, theme, { isError }) {
       if (isPartial) return new Text(theme.fg("warning", "Searching..."), 0, 0);
+      if (isError) {
+        const message = result.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n");
+        return new Text(theme.fg("error", message || "fd search failed"), 0, 0);
+      }
       const details = result.details;
       if (!details || details.matchCount === 0) {
         return new Text(theme.fg("dim", "No files found"), 0, 0);
@@ -363,8 +370,15 @@ export default function fileSearchTools(pi: ExtensionAPI) {
       return new Text(text, 0, 0);
     },
 
-    renderResult(result, { expanded, isPartial }, theme) {
+    renderResult(result, { expanded, isPartial }, theme, { isError }) {
       if (isPartial) return new Text(theme.fg("warning", "Searching..."), 0, 0);
+      if (isError) {
+        const message = result.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n");
+        return new Text(theme.fg("error", message || "rg search failed"), 0, 0);
+      }
       const details = result.details;
       if (!details || details.outputLines === 0) {
         return new Text(theme.fg("dim", "No matches found"), 0, 0);

@@ -24,7 +24,62 @@ import {
 } from "./src/binaries.ts";
 import { formatCapturedOutput, formatOutput } from "./src/output.ts";
 import { executeSearchProcess } from "./src/process.ts";
-import { installNotifications, makeBinaryInitializers } from "./index.ts";
+import type {
+  ExtensionAPI,
+  ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import fileSearchTools, {
+  installNotifications,
+  makeBinaryInitializers,
+} from "./index.ts";
+
+it("search renderers distinguish failed searches from valid empty results", () => {
+  const tools: ToolDefinition[] = [];
+  fileSearchTools({
+    on() {},
+    registerTool(tool: ToolDefinition) {
+      tools.push(tool);
+    },
+  } as unknown as ExtensionAPI);
+
+  for (const tool of tools) {
+    const render = tool.renderResult!;
+    const theme = { fg: (_color: string, text: string) => text } as Parameters<
+      typeof render
+    >[2];
+    for (const expanded of [false, true]) {
+      const options = { expanded, isPartial: false };
+      const context = { isError: true } as Parameters<typeof render>[3];
+      const message = `${tool.name} failed: missing/path: No such file or directory`;
+      const output = render(
+        { content: [{ type: "text", text: message }], details: undefined },
+        options,
+        theme,
+        context,
+      );
+      assert.isDefined(output);
+      const text = output!.render(120).join("\n");
+      assert.include(text, message);
+      assert.notMatch(text, /No (matches|files) found/);
+
+      const empty = render(
+        {
+          content: [{ type: "text", text: "" }],
+          details: {
+            binarySource: "system",
+            matchCount: 0,
+            outputLines: 0,
+            truncated: false,
+          },
+        },
+        options,
+        theme,
+        { ...context, isError: false },
+      );
+      assert.match(empty!.render(120).join("\n"), /No (matches|files) found/);
+    }
+  }
+});
 
 // --- argument construction -------------------------------------------------
 
