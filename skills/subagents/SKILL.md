@@ -5,7 +5,11 @@ description: Route and manage delegated work across Pi, Claude, Codex, and Curso
 
 # Subagents
 
-Each subagent is headless, has its own context window, cannot see the parent conversation, cannot ask the user, and cannot spawn subagents or workflows. Give every child a self-contained prompt with paths, constraints, and the expected report.
+Each subagent is headless, has its own context window, cannot ask the user, and cannot spawn subagents or workflows. Children start with fresh context by default. Give every child a bounded prompt with paths, constraints, and the expected report.
+
+On Pi, choose the context mode yourself. No user request or confirmation is needed. Use `subagent_spawn({ harness: "pi", context_mode: "fork", name: "...", prompt: "..." })` when a delegated task depends on earlier conversation decisions or constraints that would be easy to lose in a handoff. Prefer fresh context for self-contained tasks, narrow scans, and independent reviews. Keep small or sequential tasks in the parent. Avoid copying a large history when a short task prompt is sufficient.
+
+Fork mode copies the active saved conversation branch before the unfinished tool batch, including existing compaction, into a separate session file. It requires the same working directory. The child keeps normal child tool restrictions and returns a final report. Cache reuse is not guaranteed.
 
 ## Decide whether to delegate
 
@@ -35,7 +39,7 @@ Effort defaults are medium for routine work and high for planning, review, and h
 
 Split only along independent boundaries. If a task does not fit a class, narrow the deliverable or keep it in the parent instead of building a chain of handoffs. Escalate model or effort when a concrete reasoning failure warrants it, not as a substitute for scope.
 
-**Never let a `pi` spawn inherit its model.** Omitting `model` and `reasoning_effort` inherits the parent's _current_ model, and every `/model` pick and Ctrl+P cycle rewrites the global default. A `task_class` sets both, which is the reason to prefer it. A spawn without a class must pass both by hand.
+**For fresh Pi spawns, set the model and effort explicitly or use a task class.** Omitting them inherits the parent's current model. For the opt-in fork experiment, inheritance is deliberate: fork mode selects the current parent model and effort unless explicitly overridden, rather than the task class's model and effort. Use the same explicit model and effort on the fresh control when comparing modes.
 
 Overriding a class's `model` re-points its harness and is the normal way to scale a review down. Overriding `harness` **drops the class's model** — name the model too. See `reference/budgets.md`.
 
@@ -82,7 +86,7 @@ There is no `reviewer` role — the repo's own review skill already carries the 
 Call `subagent_spawn` with a complete `prompt`, a short `name`, and a `task_class`, plus optional `working_dir` and any per-field override. `harness` is required only when no class fits. **At most four subagents run concurrently** (`MAX_RUNNING`, `extensions/subagents/src/domain.ts`). The binding limit is your own ability to read the reports, not cost.
 
 - `subagent_check({ id })`: peek without blocking. Reports context used and turn count.
-- `subagent_send({ id, message })`: follow up on a settled near-miss, or correct a drifting run.
+- `subagent_send({ id, message })`: follow up on a settled near-miss, or correct a drifting run. Forked children retain their initial snapshot; later parent messages must still be supplied explicitly.
 - `subagent_list()`: list all runs.
 - `subagent_wait({ ids })`: block only when results are required to proceed.
 - `subagent_cancel({ ids })`: stop runs while preserving partial transcripts.

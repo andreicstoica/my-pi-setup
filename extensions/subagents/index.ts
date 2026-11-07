@@ -43,6 +43,7 @@ import {
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { deriveBtwTitle, isModelVisible } from "./src/by-the-way.ts";
+import { captureForkSource } from "./src/fork.ts";
 import {
   BACKEND_NAMES,
   formatElapsed,
@@ -118,6 +119,7 @@ interface BtwResultData {
 
 function describeSubagent(snap: SubagentSnapshot) {
   const details = [
+    snap.meta.contextMode === "fork" ? "fork" : undefined,
     `${snap.backend}: ${snap.meta.modelLabel ?? "?"}`,
     formatContextUtilization(snap.usage),
     formatElapsed(snap),
@@ -362,6 +364,12 @@ export default function (pi: ExtensionAPI) {
       name: Type.String({
         description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.name,
       }),
+      context_mode: Type.Optional(
+        StringEnum(["fresh", "fork"] as const, {
+          description:
+            "Default fresh: only the task prompt. Experimental fork: Pi only, same working directory, copies the active parent history before the unfinished tool batch. Uses the current parent model and effort unless explicitly overridden. Earlier compaction remains. Child tools and final-report delivery remain unchanged; cache reuse is not guaranteed.",
+        }),
+      ),
       task_class: Type.Optional(
         StringEnum(TASK_CLASS_NAMES, {
           description: `${SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.taskClass}\n${describeTaskClasses()}`,
@@ -409,7 +417,13 @@ export default function (pi: ExtensionAPI) {
         model: params.model,
         reasoningEffort: params.reasoning_effort,
       });
-      const harness = routing.harness;
+      const harness =
+        routing.harness ?? (params.context_mode === "fork" ? "pi" : undefined);
+      if (params.context_mode === "fork" && harness !== "pi") {
+        throw new Error(
+          'context_mode "fork" is supported only by the pi harness.',
+        );
+      }
       if (!harness) {
         throw new Error(
           `Give either task_class (which derives the harness, model, and effort) or an explicit harness. Task classes: ${TASK_CLASS_NAMES.join(", ")}.`,
@@ -420,6 +434,22 @@ export default function (pi: ExtensionAPI) {
       if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
         throw new Error(`working_dir is not a directory: ${cwd}`);
       }
+      if (params.context_mode === "fork" && cwd !== path.resolve(ctx.cwd)) {
+        throw new Error(
+          "Fork mode requires the same working directory as the parent.",
+        );
+      }
+      const forkSource =
+        params.context_mode === "fork"
+          ? captureForkSource(ctx.sessionManager)
+          : undefined;
+      const model = forkSource
+        ? (params.model ??
+          (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined))
+        : routing.model;
+      const reasoningEffort = forkSource
+        ? (params.reasoning_effort ?? pi.getThinkingLevel())
+        : routing.reasoningEffort;
 
       const title = params.name.trim().slice(0, 160) || "subagent";
       const limits = {
@@ -432,12 +462,19 @@ export default function (pi: ExtensionAPI) {
       const snap = await runTool(
         getRuntime(),
         manager.spawn(harness, {
-          prompt: buildChildPrompt(params.prompt, routing.constraint, limits),
+          prompt: buildChildPrompt(
+            forkSource
+              ? `You are a forked child of the parent conversation. Earlier history is context. Execute only the task below and report to the parent; do not continue other work from that history.\n\n${params.prompt}`
+              : params.prompt,
+            routing.constraint,
+            limits,
+          ),
+          forkSource,
           ...limits,
           title,
           cwd,
-          model: routing.model,
-          reasoningEffort: routing.reasoningEffort,
+          model,
+          reasoningEffort,
           parent: {
             parentCwd: ctx.cwd,
             projectTrusted: resolveChildProjectTrust({
@@ -465,6 +502,7 @@ export default function (pi: ExtensionAPI) {
               harness,
               modelLabel: snap.meta.modelLabel ?? "?",
               cwd,
+              contextMode: params.context_mode,
             }),
           },
         ],
@@ -473,6 +511,7 @@ export default function (pi: ExtensionAPI) {
           title: snap.title,
           cwd,
           harness,
+          contextMode: params.context_mode ?? "fresh",
           model: snap.meta.modelLabel,
         },
         structuredContent: {
@@ -482,6 +521,7 @@ export default function (pi: ExtensionAPI) {
           cwd,
           status: snap.status,
           ...(snap.meta.modelLabel ? { model: snap.meta.modelLabel } : {}),
+          ...(forkSource ? { contextMode: "fork" } : {}),
         },
       };
     },
@@ -490,6 +530,7 @@ export default function (pi: ExtensionAPI) {
       let text = theme.fg("toolTitle", theme.bold("spawn "));
       text += theme.fg("accent", args.name?.trim() || "subagent");
       const flags = [
+        args.context_mode === "fork" ? "fork" : undefined,
         args.harness,
         args.model,
         args.reasoning_effort ? `effort=${args.reasoning_effort}` : undefined,

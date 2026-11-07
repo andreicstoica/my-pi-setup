@@ -16,6 +16,7 @@ const statusSchema = Type.Union([
 ]);
 
 const summarySchema = Type.Object({
+  contextMode: Type.Optional(Type.Literal("fork")),
   id: Type.String(),
   title: Type.String(),
   harness: Type.String(),
@@ -27,6 +28,7 @@ const summarySchema = Type.Object({
 });
 
 export const spawnOutputSchema = Type.Object({
+  contextMode: Type.Optional(Type.Literal("fork")),
   id: Type.String(),
   title: Type.String(),
   harness: Type.String(),
@@ -95,6 +97,7 @@ export function projectSubagent(
     cwd: snap.cwd,
     status: snap.status,
     ...(snap.meta.modelLabel ? { model: snap.meta.modelLabel } : {}),
+    ...(snap.meta.contextMode ? { contextMode: snap.meta.contextMode } : {}),
     ...(options.turns !== false ? { turns: snap.turns } : {}),
     ...(snap.errorText ? { error: snap.errorText } : {}),
   };

@@ -31,6 +31,7 @@ import type {
   TranscriptPart,
 } from "../domain.ts";
 import { SendError, SpawnError } from "../domain.ts";
+import { createForkSession } from "../fork.ts";
 import {
   bindChildSessionExtensions,
   CHILD_EXCLUDED_TOOL_NAMES,
@@ -267,7 +268,9 @@ const makePiSession = (
         });
         const { session } = await createAgentSession({
           cwd: task.cwd,
-          sessionManager: SessionManager.create(task.cwd),
+          sessionManager: task.forkSource
+            ? createForkSession(task.forkSource, task.cwd)
+            : SessionManager.create(task.cwd),
           settingsManager,
           resourceLoader: loader,
           model,
@@ -327,6 +330,7 @@ const makePiSession = (
       const m = activeModel();
       return {
         backend: "pi",
+        ...(task.forkSource ? { contextMode: "fork" as const } : {}),
         modelLabel: m ? `${m.provider}/${m.id}` : undefined,
         contextWindow: m?.contextWindow,
         sessionFilePath: session.sessionFile,

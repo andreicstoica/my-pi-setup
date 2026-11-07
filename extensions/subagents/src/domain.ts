@@ -9,6 +9,7 @@
 
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { Data } from "effect";
+import type { ForkSource } from "./fork.ts";
 
 export const BACKEND_NAMES = ["pi", "claude", "codex", "cursor"] as const;
 export type BackendName = (typeof BACKEND_NAMES)[number];
@@ -60,6 +61,7 @@ export interface ParentContext {
 }
 
 export interface SpawnTask {
+  readonly forkSource?: ForkSource;
   /** Omitted for normal tool-driven spawns. */
   readonly origin?: SubagentOrigin;
   readonly prompt: string;
@@ -81,6 +83,7 @@ export interface SpawnTask {
 }
 
 export interface SubagentMeta {
+  readonly contextMode?: "fork";
   readonly backend: BackendName;
   /** Display label, e.g. "anthropic/claude-opus-4-5" or "gpt-5-codex". */
   readonly modelLabel?: string;

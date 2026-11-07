@@ -14,7 +14,7 @@ import {
  * every request. The `harness` parameter description carries the short version.
  */
 export const SUBAGENT_SPAWN_TOOL_DESCRIPTION =
-  "Delegate a bounded, independent task when parallel work or isolating noisy research saves time or context. Handle small fixes and sequential work in the parent instead. Returns an id immediately; results arrive automatically or through subagent_wait. Children cannot see this conversation, ask the user, or spawn further agents. Set task_class for harness, model, and effort. Each run stops at max_turns or timeout_seconds and returns incomplete output as an error, not success. Trusted working directories only. Max " +
+  "Delegate a bounded, independent task when parallel work or isolating noisy research saves time or context. Handle small fixes and sequential work in the parent instead. Returns an id immediately; results arrive automatically or through subagent_wait. Children start fresh unless context_mode is explicitly fork (experimental, Pi only). They cannot ask the user or spawn further agents. Set task_class for harness, model, and effort. Each run stops at max_turns or timeout_seconds and returns incomplete output as an error, not success. Trusted working directories only. Max " +
   MAX_RUNNING +
   " running at once.";
 
@@ -24,6 +24,7 @@ export const SUBAGENT_SPAWN_PROMPT_SNIPPET =
 
 /** Guides the parent model to delegate standalone tasks and avoid unnecessary blocking waits. */
 export const SUBAGENT_SPAWN_PROMPT_GUIDELINES = [
+  "Choose context_mode yourself; no user request or confirmation is needed. Use fork with the pi harness when the delegated task depends on earlier conversation decisions or constraints that would be easy to lose in a handoff. Use fresh context for self-contained tasks, narrow scans, and independent reviews. Keep small or sequential tasks in the parent. Forks copy the parent's existing context and use its current model and effort unless explicitly overridden, so avoid copying a large history when a short task prompt is sufficient.",
   "Work in the parent by default. Delegate only an independent task that benefits from parallel execution or keeping noisy research out of the parent context. A small fix does not need a recon/implementation/review chain.",
   "Do not duplicate a child's assigned work while it runs. Keep dependent edits in one owner; use parallel tool calls rather than extra agents for simple independent reads.",
   "Classify the work with task_class rather than picking a harness and model yourself; there is no default-preferred harness, and the class encodes which one suits the task. Override a field only for a reason you can state.",
@@ -34,7 +35,7 @@ export const SUBAGENT_SPAWN_PROMPT_GUIDELINES = [
 /** Model-facing schema descriptions for subagent_spawn task and execution options. */
 export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
   prompt:
-    "Task prompt for the subagent. Must be self-contained: include all needed context, file paths, and what to report back. A standard report contract is appended automatically, so state what you need reported, not how to format it.",
+    "Task prompt for the subagent. For fresh context, include all needed context. For fork context, earlier parent history is available but still state the bounded assignment, paths, constraints, and what to report back. A standard report contract is appended automatically.",
   name: 'Short human-readable name for this subagent (2-4 words), shown in listings and the UI. Its slug also becomes the subagent id used by wait/check/cancel, so name it after the task ("investigate auth regression" -> sa-investigate-auth-regression), not "agent 1".',
   taskClass:
     "What kind of work this is. Preferred over choosing a harness and model yourself: the class derives the harness, model, and effort that suit it, and appends its scope constraint to the child's prompt. Give harness/model/reasoning_effort only to override a specific field of the class, or when no class fits.",
@@ -118,6 +119,7 @@ export function stripReportPreamble(output: string) {
 
 /** Builds the subagent_spawn result that tells the parent model how to continue or inspect the child. */
 export function buildSubagentSpawnResult(options: {
+  contextMode?: "fresh" | "fork";
   id: string;
   title: string;
   harness: string;
@@ -125,7 +127,7 @@ export function buildSubagentSpawnResult(options: {
   cwd: string;
 }) {
   return (
-    `Spawned subagent ${options.id} "${options.title}" (${options.harness}: ${options.modelLabel}, ${options.cwd}).\n` +
+    `Spawned subagent ${options.id} "${options.title}" (${options.harness}: ${options.modelLabel}, ${options.cwd}${options.contextMode === "fork" ? ", forked parent context" : ""}).\n` +
     `It runs in the background. Its result will be delivered to you when it finishes, ` +
     `or use subagent_wait(ids: ["${options.id}"]) to block for it, subagent_cancel to stop it, subagent_check to peek, subagent_list to see all.`
   );
@@ -180,7 +182,7 @@ export const SUBAGENT_SEND_TOOL_DESCRIPTION =
 export const SUBAGENT_SEND_PARAMETER_DESCRIPTIONS = {
   id: "Subagent id, exactly as returned by subagent_spawn",
   message:
-    "The follow-up, self-contained as to what you now want. The child kept its own context but never saw this conversation, so name any new file path, constraint, or finding explicitly. State the correction or the gap, not the whole task again.",
+    "The follow-up, self-contained as to what you now want. Fresh children did not see the parent conversation; forked children have only the snapshot from their spawn. Name any new file path, constraint, or finding explicitly. State the correction or the gap, not the whole task again.",
 };
 
 /**

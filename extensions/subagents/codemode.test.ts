@@ -116,3 +116,29 @@ test("codemode receives typed subagent list data and rejects unknown ids", async
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("codemode validates fork mode before starting a child", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "subagents-fork-codemode-"));
+  try {
+    const { session, run } = await openSession(dir);
+    const rejected = await run(`
+      const attempt = async (extra) => {
+        try {
+          await tools.subagent_spawn({ name: "fork test", prompt: "Read only.", context_mode: "fork", ...extra });
+          return "unexpected success";
+        } catch (error) { return String(error); }
+      };
+      return {
+        harness: await attempt({ harness: "claude" }),
+        cwd: await attempt({ harness: "pi", working_dir: "/tmp" }),
+        unsaved: await attempt({ harness: "pi" }),
+      };
+    `);
+    assert.match(rejected.harness, /only by the pi harness/);
+    assert.match(rejected.cwd, /same working directory/);
+    assert.match(rejected.unsaved, /saved parent session/);
+    session.dispose();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
