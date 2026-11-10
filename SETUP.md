@@ -1,18 +1,13 @@
 # Setup
 
-Install Pi 1.3.0 or later and Node.js 22.19 or later. Clone or copy this repository to `~/.pi/agent`, then install the root and independent extension dependencies:
+Install Pi 1.3.0 or later and Node.js 22.19 or later. Clone or copy this repository to `~/.pi/agent`, then install all dependencies once from the root:
 
 ```sh
 cd ~/.pi/agent
 npm ci
-for extension in extensions/*/; do
-  if test -f "$extension/package-lock.json"; then
-    npm --prefix "$extension" ci
-  elif test -f "$extension/package.json"; then
-    npm --prefix "$extension" install
-  fi
-done
 ```
+
+Extensions with a `package.json` are npm workspaces of the root package, so they share one `node_modules` and one `package-lock.json`. Add an extension's dependency from the root with `npm install <package> -w extensions/<name>`. The root `prepare` script runs `effect-tsgo patch` once for the shared TypeScript install. Do not add `prepare` to an extension: the patch fails when it runs twice.
 
 ## Skills
 
